@@ -35,15 +35,8 @@ void RemotePluginManager::init() {
   // Attempt to create an instance of each supported plugin.
 #define PLUGIN_TARGET(Name)                                                    \
   do {                                                                         \
-    auto Plugin = std::unique_ptr<GenericPluginTy>(createPlugin_##Name());     \
-    if (auto Err = Plugin->init()) {                                           \
-      [[maybe_unused]] std::string InfoMsg = toString(std::move(Err));         \
-      DP("Failed to init plugin: %s\n", InfoMsg.c_str());                      \
-    } else {                                                                   \
-      DP("Registered plugin %s with %d visible device(s)\n",                   \
-         Plugin->getName(), Plugin->number_of_devices());                      \
-      Plugins.emplace_back(std::move(Plugin));                                 \
-    }                                                                          \
+    Plugins.emplace_back(                                                      \
+        std::unique_ptr<GenericPluginTy>(createPlugin_##Name()));              \
   } while (false);
 #include "Shared/RemoteTargets.def"
 
@@ -83,8 +76,18 @@ void RemotePluginManager::initAllPlugins() {
 /// Return the number of usable devices.
 int RemotePluginManager::getNumDevices() {
   int32_t NumDevices = 0;
-  for (auto &R : Plugins)
-    NumDevices += R->number_of_devices();
+  for (auto &Plugin : Plugins) {
+    if (!Plugin->is_initialized()) {
+      if (auto Err = Plugin->init()) {
+        [[maybe_unused]] std::string InfoMsg = toString(std::move(Err));
+        DP("Failed to init plugin: %s\n", InfoMsg.c_str());
+        continue;
+      }
+      DP("Registered plugin %s with %d visible device(s)\n", Plugin->getName(),
+         Plugin->number_of_devices());
+    }
+    NumDevices += Plugin->number_of_devices();
+  }
   return NumDevices;
 }
 
