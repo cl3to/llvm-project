@@ -101,7 +101,7 @@ void MPIRequestManagerTy::send(const void *Buffer, int Size,
 
 /// Divide the \p Buffer into fragments of size \p MPIFragmentSize and send them
 /// to \p OtherRank asynchronously.
-void MPIRequestManagerTy::sendInBatchs(void *Buffer, int Size) {
+void MPIRequestManagerTy::sendInBatchs(void *Buffer, int64_t Size) {
   // Operates over many fragments of the original buffer of at most
   // MPI_FRAGMENT_SIZE bytes.
   char *BufferByteArray = reinterpret_cast<char *>(Buffer);
@@ -123,7 +123,7 @@ void MPIRequestManagerTy::receive(void *Buffer, int Size,
 
 /// Asynchronously receive message fragments from \p OtherRank and reconstruct
 /// them into \p Buffer.
-void MPIRequestManagerTy::receiveInBatchs(void *Buffer, int Size) {
+void MPIRequestManagerTy::receiveInBatchs(void *Buffer, int64_t Size) {
   // Operates over many fragments of the original buffer of at most
   // MPI_FRAGMENT_SIZE bytes.
   char *BufferByteArray = reinterpret_cast<char *>(Buffer);
