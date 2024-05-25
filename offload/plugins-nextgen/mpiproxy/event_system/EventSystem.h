@@ -272,14 +272,14 @@ public:
   void send(const void *Buffer, int Size, MPI_Datatype Datatype);
 
   /// Send a buffer with determined size to target in batchs.
-  void sendInBatchs(void *Buffer, int Size);
+  void sendInBatchs(void *Buffer, int64_t Size);
 
   /// Receives a buffer of given datatype items with determined size from
   /// target.
   void receive(void *Buffer, int Size, MPI_Datatype Datatype);
 
   /// Receives a buffer with determined size from target in batchs.
-  void receiveInBatchs(void *Buffer, int Size);
+  void receiveInBatchs(void *Buffer, int64_t Size);
 
   /// Coroutine that waits on all internal pending requests.
   EventTy wait();
