@@ -6,6 +6,7 @@
 #include <cstring>
 #include <functional>
 #include <memory>
+#include <mutex>
 #include <tuple>
 
 #include "EventSystem.h"
@@ -15,12 +16,23 @@
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/SmallVector.h"
 
+#ifdef OMPT_SUPPORT
+#include "OpenMP/OMPT/Callback.h"
+#include "omp-tools.h"
+extern void llvm::omp::target::ompt::connectLibrary();
+#endif
+
 /// Event Implementations on Device side.
 struct ProxyDevice {
   ProxyDevice()
       : NumExecEventHandlers("OMPTARGET_NUM_EXEC_EVENT_HANDLERS", 1),
         NumDataEventHandlers("OMPTARGET_NUM_DATA_EVENT_HANDLERS", 1),
         EventPollingRate("OMPTARGET_EVENT_POLLING_RATE", 1) {
+#ifdef OMPT_SUPPORT
+    // Initialize OMPT first
+    llvm::omp::target::ompt::connectLibrary();
+#endif
+
     EventSystem.initialize();
     PluginManager.init();
     for (int PluginId = 0; PluginId < PluginManager.getNumUsedPlugins();
@@ -44,6 +56,7 @@ struct ProxyDevice {
   }
 
   __tgt_async_info *MapAsyncInfo(void *HostAsyncInfoPtr) {
+    const std::lock_guard<std::mutex> Lock(TableMutex);
     __tgt_async_info *TgtAsyncInfoPtr = nullptr;
     if (AsyncInfoTable[HostAsyncInfoPtr])
       TgtAsyncInfoPtr =
@@ -227,7 +240,7 @@ struct ProxyDevice {
     if (auto Error = co_await RequestManager; Error)
       co_return Error;
 
-    auto TgtAsyncInfo = MapAsyncInfo(HstAsyncInfoPtr);
+    auto *TgtAsyncInfo = MapAsyncInfo(HstAsyncInfoPtr);
 
     RequestManager.receive(&TgtAsyncInfo->Queue, sizeof(void *), MPI_BYTE);
     RequestManager.receive(&TgtPtr, sizeof(void *), MPI_BYTE);
@@ -269,7 +282,7 @@ struct ProxyDevice {
     if (auto Error = co_await RequestManager; Error)
       co_return Error;
 
-    auto TgtAsyncInfo = MapAsyncInfo(HstAsyncInfoPtr);
+    auto *TgtAsyncInfo = MapAsyncInfo(HstAsyncInfoPtr);
 
     RequestManager.receive(&TgtAsyncInfo->Queue, sizeof(void *), MPI_BYTE);
     RequestManager.receive(&TgtPtr, sizeof(void *), MPI_BYTE);
@@ -313,7 +326,7 @@ struct ProxyDevice {
     if (auto Err = co_await RequestManager; Err)
       co_return Err;
 
-    auto TgtAsyncInfo = MapAsyncInfo(HstAsyncInfoPtr);
+    auto *TgtAsyncInfo = MapAsyncInfo(HstAsyncInfoPtr);
 
     RequestManager.receive(&TgtAsyncInfo->Queue, sizeof(void *), MPI_BYTE);
 
@@ -571,7 +584,7 @@ struct ProxyDevice {
     if (auto Error = co_await RequestManager; Error)
       co_return Error;
 
-    auto TgtAsyncInfo = MapAsyncInfo(HstAsyncInfoPtr);
+    auto *TgtAsyncInfo = MapAsyncInfo(HstAsyncInfoPtr);
 
     RequestManager.receive(&TgtAsyncInfo->Queue, sizeof(void *), MPI_BYTE);
 
@@ -616,7 +629,7 @@ struct ProxyDevice {
     if (auto Error = co_await RequestManager; Error)
       co_return Error;
 
-    auto TgtAsyncInfo = MapAsyncInfo(HstAsyncInfoPtr);
+    auto *TgtAsyncInfo = MapAsyncInfo(HstAsyncInfoPtr);
 
     RequestManager.receive(&TgtAsyncInfo->Queue, sizeof(void *), MPI_BYTE);
     RequestManager.receive(&EventPtr, sizeof(void *), MPI_BYTE);
@@ -645,7 +658,7 @@ struct ProxyDevice {
     if (auto Error = co_await RequestManager; Error)
       co_return Error;
 
-    auto TgtAsyncInfo = MapAsyncInfo(HstAsyncInfoPtr);
+    auto *TgtAsyncInfo = MapAsyncInfo(HstAsyncInfoPtr);
 
     RequestManager.receive(&TgtAsyncInfo->Queue, sizeof(void *), MPI_BYTE);
     RequestManager.receive(&EventPtr, sizeof(void *), MPI_BYTE);
@@ -750,7 +763,7 @@ struct ProxyDevice {
     if (auto Error = co_await RequestManager; Error)
       co_return Error;
 
-    auto TgtAsyncInfo = MapAsyncInfo(HstAsyncInfoPtr);
+    auto *TgtAsyncInfo = MapAsyncInfo(HstAsyncInfoPtr);
     RequestManager.receive(&TgtAsyncInfo->Queue, sizeof(void *), MPI_BYTE);
 
     if (auto Err = co_await RequestManager; Err)
@@ -1076,6 +1089,9 @@ private:
   IntEnvar NumDataEventHandlers;
   /// Polling rate period (us) used by event handlers.
   IntEnvar EventPollingRate;
+
+  // Mutex for AsyncInfoTable
+  std::mutex TableMutex;
 };
 
 int main(int argc, char **argv) {
