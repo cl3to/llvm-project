@@ -20,6 +20,16 @@ add_subdirectory(event_system)
 # Host Side Plugin
 add_subdirectory(host-plugin)
 
+# Configure testing for the MPI plugin.
+list(APPEND LIBOMPTARGET_TESTED_PLUGINS "omptarget.rtl.mpiproxy")
+# Report to the parent scope that we are building a plugin for MPI.
+set(LIBOMPTARGET_TESTED_PLUGINS "${LIBOMPTARGET_TESTED_PLUGINS}" PARENT_SCOPE)
+
+# Define the target specific triples and ELF machine values.
+set(LIBOMPTARGET_SYSTEM_TARGETS
+    "${LIBOMPTARGET_SYSTEM_TARGETS} x86_64-pc-linux-gnu-mpi nvptx64-nvidia-cuda-mpi" PARENT_SCOPE) 
+
+
 # Remote Plugin Manager
 message(STATUS "Building the remote-proxy-device")
 
@@ -47,6 +57,7 @@ configure_file(
 llvm_add_tool(OPENMP remote-proxy-device
   src/ProxyDevice.cpp
   src/RemotePluginManager.cpp
+  ${LIBOMPTARGET_SRC_DIR}/OpenMP/OMPT/Callback.cpp
 )
 
 llvm_update_compile_flags(remote-proxy-device)
@@ -56,6 +67,8 @@ target_link_libraries(remote-proxy-device PRIVATE
   LLVMSupport
   omp
 )
+
+add_dependencies(remote-proxy-device omp)
 
 target_include_directories(remote-proxy-device PRIVATE
   ${LIBOMPTARGET_INCLUDE_DIR}
@@ -77,13 +90,5 @@ set_target_properties(remote-proxy-device
                       CXX_STANDARD_REQUIRED ON)
 
 target_compile_definitions(remote-proxy-device PRIVATE
+                           TARGET_NAME=remote-proxy-device
                            DEBUG_PREFIX="REMOTE PLUGIN MANAGER")
-
-# Configure testing for the MPI plugin.
-list(APPEND LIBOMPTARGET_TESTED_PLUGINS "omptarget.rtl.mpiproxy")
-# Report to the parent scope that we are building a plugin for MPI.
-set(LIBOMPTARGET_TESTED_PLUGINS "${LIBOMPTARGET_TESTED_PLUGINS}" PARENT_SCOPE)
-
-# Define the target specific triples and ELF machine values.
-set(LIBOMPTARGET_SYSTEM_TARGETS
-    "${LIBOMPTARGET_SYSTEM_TARGETS} x86_64-pc-linux-gnu-mpi nvptx64-nvidia-cuda-mpi" PARENT_SCOPE) 
