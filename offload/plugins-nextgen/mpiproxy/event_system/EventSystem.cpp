@@ -244,20 +244,18 @@ EventTy deleteBuffer(MPIRequestManagerTy RequestManager, void *Buffer,
   co_return (co_await RequestManager);
 }
 
-EventTy submit(MPIRequestManagerTy RequestManager, void *TgtPtr, void *HstPtr,
-               int64_t Size, __tgt_async_info *AsyncInfoPtr) {
+EventTy submit(MPIRequestManagerTy RequestManager, void *TgtPtr,
+               EventDataHandleTy HstPtr, int64_t Size,
+               __tgt_async_info *AsyncInfoPtr) {
   RequestManager.send(&AsyncInfoPtr, sizeof(void *), MPI_BYTE);
-  RequestManager.send(&AsyncInfoPtr->Queue, sizeof(void *), MPI_BYTE);
 
   RequestManager.send(&TgtPtr, sizeof(void *), MPI_BYTE);
   RequestManager.send(&Size, 1, MPI_INT64_T);
 
-  RequestManager.sendInBatchs(HstPtr, Size);
+  RequestManager.sendInBatchs(HstPtr.get(), Size);
 
   if (auto Err = co_await RequestManager; Err)
     co_return Err;
-
-  RequestManager.receive(&AsyncInfoPtr->Queue, sizeof(void *), MPI_BYTE);
 
   // Event completion notification
   RequestManager.receive(nullptr, 0, MPI_BYTE);
@@ -268,7 +266,6 @@ EventTy submit(MPIRequestManagerTy RequestManager, void *TgtPtr, void *HstPtr,
 EventTy retrieve(MPIRequestManagerTy RequestManager, int64_t Size, void *HstPtr,
                  void *TgtPtr, __tgt_async_info *AsyncInfoPtr) {
   RequestManager.send(&AsyncInfoPtr, sizeof(void *), MPI_BYTE);
-  RequestManager.send(&AsyncInfoPtr->Queue, sizeof(void *), MPI_BYTE);
 
   RequestManager.send(&TgtPtr, sizeof(void *), MPI_BYTE);
   RequestManager.send(&Size, 1, MPI_INT64_T);
@@ -276,8 +273,6 @@ EventTy retrieve(MPIRequestManagerTy RequestManager, int64_t Size, void *HstPtr,
 
   if (auto Err = co_await RequestManager; Err)
     co_return Err;
-
-  RequestManager.receive(&AsyncInfoPtr->Queue, sizeof(void *), MPI_BYTE);
 
   // Event completion notification
   RequestManager.receive(nullptr, 0, MPI_BYTE);
@@ -325,23 +320,23 @@ EventTy exchange(MPIRequestManagerTy RequestManager, int SrcDevice,
 }
 
 EventTy launchKernel(MPIRequestManagerTy RequestManager, void *TgtEntryPtr,
-                     void **TgtArgs, ptrdiff_t *TgtOffsets,
-                     KernelArgsTy *KernelArgs, __tgt_async_info *AsyncInfoPtr) {
+                     EventDataHandleTy TgtArgs, EventDataHandleTy TgtOffsets,
+                     EventDataHandleTy KernelArgsHandle,
+                     __tgt_async_info *AsyncInfoPtr) {
+  KernelArgsTy *KernelArgs =
+      static_cast<KernelArgsTy *>(KernelArgsHandle.get());
+
   RequestManager.send(&KernelArgs->NumArgs, 1, MPI_UINT32_T);
   RequestManager.send(&AsyncInfoPtr, sizeof(void *), MPI_BYTE);
   RequestManager.send(&TgtEntryPtr, sizeof(void *), MPI_BYTE);
-  RequestManager.send(TgtArgs, KernelArgs->NumArgs * sizeof(void *), MPI_BYTE);
-  RequestManager.send(TgtOffsets, KernelArgs->NumArgs * sizeof(ptrdiff_t),
+  RequestManager.send(TgtArgs.get(), KernelArgs->NumArgs * sizeof(void *),
+                      MPI_BYTE);
+  RequestManager.send(TgtOffsets.get(), KernelArgs->NumArgs * sizeof(ptrdiff_t),
                       MPI_BYTE);
 
   RequestManager.send(KernelArgs, sizeof(KernelArgsTy), MPI_BYTE);
-  RequestManager.send(&AsyncInfoPtr->Queue, sizeof(void *), MPI_BYTE);
-
-  if (auto Error = co_await RequestManager; Error)
-    co_return Error;
 
   // Event completion notification
-  RequestManager.receive(&AsyncInfoPtr->Queue, sizeof(void *), MPI_BYTE);
   RequestManager.receive(nullptr, 0, MPI_BYTE);
 
   co_return (co_await RequestManager);
@@ -377,15 +372,9 @@ EventTy getFunction(MPIRequestManagerTy RequestManager,
 EventTy synchronize(MPIRequestManagerTy RequestManager,
                     __tgt_async_info *AsyncInfoPtr) {
   RequestManager.send(&AsyncInfoPtr, sizeof(void *), MPI_BYTE);
-  RequestManager.send(&AsyncInfoPtr->Queue, sizeof(void *), MPI_BYTE);
-
-  if (auto Error = co_await RequestManager; Error)
-    co_return Error;
-
-  RequestManager.receive(&AsyncInfoPtr->Queue, sizeof(void *), MPI_BYTE);
 
   // Event completion notification
-  RequestManager.receive(nullptr, 0, MPI_BYTE);
+  // RequestManager.receive(nullptr, 0, MPI_BYTE);
   co_return (co_await RequestManager);
 }
 
@@ -484,12 +473,11 @@ EventTy loadBinary(MPIRequestManagerTy RequestManager,
 EventTy queryAsync(MPIRequestManagerTy RequestManager,
                    __tgt_async_info *AsyncInfoPtr) {
   RequestManager.send(&AsyncInfoPtr, sizeof(void *), MPI_BYTE);
-  RequestManager.send(&AsyncInfoPtr->Queue, sizeof(void *), MPI_BYTE);
 
   if (auto Err = co_await RequestManager; Err)
     co_return Err;
 
-  RequestManager.receive(&AsyncInfoPtr->Queue, sizeof(void *), MPI_BYTE);
+  RequestManager.receive(nullptr, 0, MPI_BYTE);
 
   co_return (co_await RequestManager);
 }
