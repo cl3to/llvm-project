@@ -87,7 +87,7 @@ int BlockMatMul_TargetNowait(BlockMatrix &A, BlockMatrix &B, BlockMatrix &C) {
       for (int k = 0; k < N / BS; ++k) {
         float *BlockA = A.GetBlock(i, k);
         float *BlockB = B.GetBlock(k, j);
-// clang-format off
+        // clang-format off
 #pragma omp target depend(in: BlockA[0], BlockB[0]) depend(inout: BlockC[0])   \
             map(to: BlockA[:BS * BS], BlockB[:BS * BS])                        \
             map(tofrom: BlockC[:BS * BS]) nowait
