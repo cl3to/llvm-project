@@ -69,6 +69,20 @@ struct ProxyDevice {
     return TgtAsyncInfoPtr;
   }
 
+  EventTy waitAsyncOpStart(void *AsyncInfoPtr) {
+    auto *TgtAsyncInfo = MapAsyncInfo(AsyncInfoPtr);
+    while (TgtAsyncInfo->Queue == nullptr)
+      co_await std::suspend_always{};
+    co_return llvm::Error::success();
+  }
+
+  EventTy waitAsyncOpEnd(void *AsyncInfoPtr) {
+    auto *TgtAsyncInfo = MapAsyncInfo(AsyncInfoPtr);
+    while (TgtAsyncInfo->Queue != nullptr)
+      co_await std::suspend_always{};
+    co_return llvm::Error::success();
+  }
+
   EventTy retrieveNumDevices(MPIRequestManagerTy RequestManager) {
     int32_t NumDevices = PluginManager.getNumDevices();
     RequestManager.send(&NumDevices, 1, MPI_INT);
@@ -240,9 +254,8 @@ struct ProxyDevice {
     if (auto Error = co_await RequestManager; Error)
       co_return Error;
 
-    auto *TgtAsyncInfo = MapAsyncInfo(HstAsyncInfoPtr);
+    // auto *TgtAsyncInfo = MapAsyncInfo(HstAsyncInfoPtr);
 
-    RequestManager.receive(&TgtAsyncInfo->Queue, sizeof(void *), MPI_BYTE);
     RequestManager.receive(&TgtPtr, sizeof(void *), MPI_BYTE);
     RequestManager.receive(&Size, 1, MPI_INT64_T);
 
@@ -265,7 +278,8 @@ struct ProxyDevice {
     PluginManager.Plugins[PluginId]->data_submit_async(
         DeviceId, TgtPtr, DataHandle.get(), Size, nullptr);
 
-    RequestManager.send(&TgtAsyncInfo->Queue, sizeof(void *), MPI_BYTE);
+    // if (auto Error = co_await waitAsyncOpEnd(HstAsyncInfoPtr); Error)
+    //   co_return Error;
 
     // Event completion notification
     RequestManager.send(nullptr, 0, MPI_BYTE);
@@ -282,9 +296,8 @@ struct ProxyDevice {
     if (auto Error = co_await RequestManager; Error)
       co_return Error;
 
-    auto *TgtAsyncInfo = MapAsyncInfo(HstAsyncInfoPtr);
+    // auto *TgtAsyncInfo = MapAsyncInfo(HstAsyncInfoPtr);
 
-    RequestManager.receive(&TgtAsyncInfo->Queue, sizeof(void *), MPI_BYTE);
     RequestManager.receive(&TgtPtr, sizeof(void *), MPI_BYTE);
     RequestManager.receive(&Size, 1, MPI_INT64_T);
 
@@ -302,8 +315,10 @@ struct ProxyDevice {
     PluginManager.Plugins[PluginId]->data_retrieve_async(
         DeviceId, DataHandle.get(), TgtPtr, Size, nullptr);
 
+    // if (auto Error = co_await waitAsyncOpEnd(HstAsyncInfoPtr); Error)
+    //   co_return Error;
+
     RequestManager.sendInBatchs(DataHandle.get(), Size);
-    RequestManager.send(&TgtAsyncInfo->Queue, sizeof(void *), MPI_BYTE);
 
     // Event completion notification
     RequestManager.send(nullptr, 0, MPI_BYTE);
@@ -413,7 +428,7 @@ struct ProxyDevice {
     void *TgtEntryPtr = nullptr, *HostAsyncInfoPtr = nullptr;
     KernelArgsTy KernelArgs;
 
-    __tgt_async_info *AsyncInfoPtr = nullptr;
+    // __tgt_async_info *AsyncInfoPtr = nullptr;
 
     llvm::SmallVector<void *> TgtArgs;
     llvm::SmallVector<ptrdiff_t> TgtOffsets;
@@ -426,7 +441,7 @@ struct ProxyDevice {
     if (auto Error = co_await RequestManager; Error)
       co_return Error;
 
-    AsyncInfoPtr = MapAsyncInfo(HostAsyncInfoPtr);
+    // AsyncInfoPtr = MapAsyncInfo(HostAsyncInfoPtr);
 
     TgtArgs.resize(NumArgs);
     TgtOffsets.resize(NumArgs);
@@ -437,7 +452,6 @@ struct ProxyDevice {
                            MPI_BYTE);
 
     RequestManager.receive(&KernelArgs, sizeof(KernelArgsTy), MPI_BYTE);
-    RequestManager.receive(&AsyncInfoPtr->Queue, sizeof(void *), MPI_BYTE);
 
     if (auto Error = co_await RequestManager; Error)
       co_return Error;
@@ -451,8 +465,10 @@ struct ProxyDevice {
         DeviceId, TgtEntryPtr, TgtArgs.data(), TgtOffsets.data(), &KernelArgs,
         nullptr);
 
+    // if (auto Error = co_await waitAsyncOpEnd(HostAsyncInfoPtr); Error)
+    //   co_return Error;
+
     // Event completion notification
-    RequestManager.send(&AsyncInfoPtr->Queue, sizeof(void *), MPI_BYTE);
     RequestManager.send(nullptr, 0, MPI_BYTE);
 
     co_return (co_await RequestManager);
@@ -586,22 +602,18 @@ struct ProxyDevice {
 
     auto *TgtAsyncInfo = MapAsyncInfo(HstAsyncInfoPtr);
 
-    RequestManager.receive(&TgtAsyncInfo->Queue, sizeof(void *), MPI_BYTE);
-
-    if (auto Error = co_await RequestManager; Error)
-      co_return Error;
-
     int32_t PluginId, DeviceId;
 
     std::tie(PluginId, DeviceId) =
         EventSystem.mapDeviceId(RequestManager.DeviceId);
 
+    if (auto Error = co_await waitAsyncOpStart(HstAsyncInfoPtr); Error)
+      co_return Error;
+
     PluginManager.Plugins[PluginId]->synchronize(DeviceId, TgtAsyncInfo);
 
-    RequestManager.send(&TgtAsyncInfo->Queue, sizeof(void *), MPI_BYTE);
-
     // Event completion notification
-    RequestManager.send(nullptr, 0, MPI_BYTE);
+    // RequestManager.send(nullptr, 0, MPI_BYTE);
 
     co_return (co_await RequestManager);
   }
@@ -764,10 +776,6 @@ struct ProxyDevice {
       co_return Error;
 
     auto *TgtAsyncInfo = MapAsyncInfo(HstAsyncInfoPtr);
-    RequestManager.receive(&TgtAsyncInfo->Queue, sizeof(void *), MPI_BYTE);
-
-    if (auto Err = co_await RequestManager; Err)
-      co_return Err;
 
     int32_t PluginId, DeviceId;
 
@@ -776,7 +784,8 @@ struct ProxyDevice {
 
     PluginManager.Plugins[PluginId]->query_async(DeviceId, TgtAsyncInfo);
 
-    RequestManager.send(&TgtAsyncInfo->Queue, sizeof(void *), MPI_BYTE);
+    // Event completion notification
+    RequestManager.send(nullptr, 0, MPI_BYTE);
 
     co_return (co_await RequestManager);
   }
