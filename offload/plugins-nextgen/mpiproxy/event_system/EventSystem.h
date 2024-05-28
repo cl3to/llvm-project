@@ -320,8 +320,9 @@ EventTy allocateBuffer(MPIRequestManagerTy RequestManager, int64_t Size,
                        int32_t Kind, void **Buffer);
 EventTy deleteBuffer(MPIRequestManagerTy RequestManager, void *Buffer,
                      int32_t Kind);
-EventTy submit(MPIRequestManagerTy RequestManager, void *TgtPtr, void *HstPtr,
-               int64_t Size, __tgt_async_info *AsyncInfoPtr);
+EventTy submit(MPIRequestManagerTy RequestManager, void *TgtPtr,
+               EventDataHandleTy HstPtr, int64_t Size,
+               __tgt_async_info *AsyncInfoPtr);
 EventTy retrieve(MPIRequestManagerTy RequestManager, int64_t Size, void *HstPtr,
                  void *TgtPtr, __tgt_async_info *AsyncInfoPtr);
 EventTy localExchange(MPIRequestManagerTy RequestManager, void *SrcPtr,
@@ -343,8 +344,9 @@ EventTy getFunction(MPIRequestManagerTy RequestManager,
                     __tgt_device_binary Binary, const char *Name,
                     void **KernelPtr);
 EventTy launchKernel(MPIRequestManagerTy RequestManager, void *TgtEntryPtr,
-                     void **TgtArgs, ptrdiff_t *TgtOffsets,
-                     KernelArgsTy *KernelArgs, __tgt_async_info *AsyncInfoPtr);
+                     EventDataHandleTy TgtArgs, EventDataHandleTy TgtOffsets,
+                     EventDataHandleTy KernelArgsHandle,
+                     __tgt_async_info *AsyncInfoPtr);
 EventTy createEvent(MPIRequestManagerTy RequestManager, void **EventPtr);
 EventTy recordEvent(MPIRequestManagerTy RequestManager, void *EventPtr,
                     __tgt_async_info *AsyncInfoPtr);
