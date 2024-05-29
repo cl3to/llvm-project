@@ -288,32 +288,29 @@ EventTy localExchange(MPIRequestManagerTy RequestManager, void *SrcPtr,
   RequestManager.send(&DstPtr, sizeof(void *), MPI_BYTE);
   RequestManager.send(&Size, 1, MPI_INT64_T);
   RequestManager.send(&AsyncInfoPtr, sizeof(void *), MPI_BYTE);
-  RequestManager.send(&AsyncInfoPtr->Queue, sizeof(void *), MPI_BYTE);
-
-  if (auto Err = co_await RequestManager; Err)
-    co_return Err;
-
-  RequestManager.receive(&AsyncInfoPtr->Queue, sizeof(void *), MPI_BYTE);
+  RequestManager.receive(nullptr, 0, MPI_BYTE);
   co_return (co_await RequestManager);
 }
 
-EventTy exchange(MPIRequestManagerTy RequestManager, int SrcDevice,
-                 const void *OrgBuffer, int DstDevice, void *DstBuffer,
-                 int64_t Size) {
-  // Send data to SrcDevice
+EventTy exchange(MPIRequestManagerTy RequestManager, int SrcRank,
+                 const void *OrgBuffer, int DstRank, void *DstBuffer,
+                 int64_t Size, __tgt_async_info *AsyncInfoPtr) {
+  // Send data to SrcRank
   RequestManager.send(&OrgBuffer, sizeof(void *), MPI_BYTE);
   RequestManager.send(&Size, 1, MPI_INT64_T);
-  RequestManager.send(&DstDevice, 1, MPI_INT);
+  RequestManager.send(&DstRank, 1, MPI_INT);
+  RequestManager.send(&AsyncInfoPtr, sizeof(void *), MPI_BYTE);
 
-  // Send data to DstDevice
-  RequestManager.OtherRank = DstDevice;
+  // Send data to DstRank
+  RequestManager.OtherRank = DstRank;
   RequestManager.send(&DstBuffer, sizeof(void *), MPI_BYTE);
   RequestManager.send(&Size, 1, MPI_INT64_T);
-  RequestManager.send(&SrcDevice, 1, MPI_INT);
+  RequestManager.send(&SrcRank, 1, MPI_INT);
+  RequestManager.send(&AsyncInfoPtr, sizeof(void *), MPI_BYTE);
 
   // Event completion notification
   RequestManager.receive(nullptr, 0, MPI_BYTE);
-  RequestManager.OtherRank = SrcDevice;
+  RequestManager.OtherRank = SrcRank;
   RequestManager.receive(nullptr, 0, MPI_BYTE);
 
   co_return (co_await RequestManager);
@@ -651,29 +648,30 @@ bool EventSystemTy::deinitialize() {
 
 EventTy EventSystemTy::createExchangeEvent(int SrcDevice, const void *SrcBuffer,
                                            int DstDevice, void *DstBuffer,
-                                           int64_t Size) {
+                                           int64_t Size,
+                                           __tgt_async_info *AsyncInfo) {
   const int EventTag = createNewEventTag();
   auto &EventComm = getNewEventComm(EventTag);
-
-  int SrcEventNotificationInfo[] = {static_cast<int>(EventTypeTy::EXCHANGE_SRC),
-                                    EventTag};
-
-  int DstEventNotificationInfo[] = {static_cast<int>(EventTypeTy::EXCHANGE_DST),
-                                    EventTag};
 
   int32_t SrcRank, SrcDeviceId, DstRank, DstDeviceId;
 
   std::tie(SrcRank, SrcDeviceId) = mapDeviceId(SrcDevice);
   std::tie(DstRank, DstDeviceId) = mapDeviceId(DstDevice);
 
+  int SrcEventNotificationInfo[] = {static_cast<int>(EventTypeTy::EXCHANGE_SRC),
+                                    EventTag, SrcDeviceId};
+
+  int DstEventNotificationInfo[] = {static_cast<int>(EventTypeTy::EXCHANGE_DST),
+                                    EventTag, DstDeviceId};
+
   MPI_Request SrcRequest = MPI_REQUEST_NULL;
   MPI_Request DstRequest = MPI_REQUEST_NULL;
 
-  int MPIError = MPI_Isend(SrcEventNotificationInfo, 2, MPI_INT, SrcRank,
+  int MPIError = MPI_Isend(SrcEventNotificationInfo, 3, MPI_INT, SrcRank,
                            static_cast<int>(ControlTagsTy::EVENT_REQUEST),
                            GateThreadComm, &SrcRequest);
 
-  MPIError &= MPI_Isend(DstEventNotificationInfo, 2, MPI_INT, DstRank,
+  MPIError &= MPI_Isend(DstEventNotificationInfo, 3, MPI_INT, DstRank,
                         static_cast<int>(ControlTagsTy::EVENT_REQUEST),
                         GateThreadComm, &DstRequest);
 
@@ -685,9 +683,9 @@ EventTy EventSystemTy::createExchangeEvent(int SrcDevice, const void *SrcBuffer,
   MPIRequestManagerTy RequestManager(EventComm, EventTag, SrcRank, SrcDeviceId,
                                      {SrcRequest, DstRequest});
 
-  co_return (co_await OriginEvents::exchange(std::move(RequestManager),
-                                             SrcDevice, SrcBuffer, DstDevice,
-                                             DstBuffer, Size));
+  co_return (co_await OriginEvents::exchange(std::move(RequestManager), SrcRank,
+                                             SrcBuffer, DstRank, DstBuffer,
+                                             Size, AsyncInfo));
 }
 
 /// Creates a new event tag of at least 'FIRST_EVENT' value.

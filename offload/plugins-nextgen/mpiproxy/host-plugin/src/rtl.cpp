@@ -17,6 +17,7 @@
 #include <list>
 #include <optional>
 #include <string>
+#include <tuple>
 
 #include "Shared/APITypes.h"
 #include "Shared/Debug.h"
@@ -485,6 +486,17 @@ struct MPIPluginTy : public GenericPluginTy {
   /// This plugin does not support exchanging data between two devices.
   bool isDataExchangable(int32_t SrcDeviceId, int32_t DstDeviceId) override {
     bool QueryResult = false;
+
+    int32_t SrcRank = -1, SrcDevId, DstRank = -1, DstDevId;
+
+    std::tie(SrcRank, SrcDevId) = EventSystem.mapDeviceId(SrcDeviceId);
+    std::tie(DstRank, DstDevId) = EventSystem.mapDeviceId(DstDeviceId);
+
+    // If the exchange is between different mpi processes, it is possible to
+    // perform the operation without consulting the devices
+    if ((SrcRank != -1) && (DstRank != -1) && (SrcRank != DstRank))
+      return true;
+
     EventTy Event = EventSystem.createEvent(
         OriginEvents::isDataExchangable, EventTypeTy::IS_DATA_EXCHANGABLE,
         SrcDeviceId, DstDeviceId, &QueryResult);
@@ -623,6 +635,8 @@ struct MPIPluginTy : public GenericPluginTy {
              toString(std::move(Error)).c_str());
       return OFFLOAD_FAIL;
     }
+
+    DeviceImgPtrToDeviceId[Binary->handle] = DeviceId;
 
     return OFFLOAD_SUCCESS;
   }
@@ -831,9 +845,22 @@ struct MPIPluginTy : public GenericPluginTy {
       return OFFLOAD_FAIL;
     }
 
-    EventTy Event = EventSystem.createEvent(
-        OriginEvents::localExchange, EventTypeTy::LOCAL_EXCHANGE, SrcDeviceId,
-        SrcPtr, DstDeviceId, DstPtr, Size, AsyncInfo);
+    int32_t SrcRank, SrcDevId, DstRank, DstDevId;
+    EventTy Event;
+
+    std::tie(SrcRank, SrcDevId) = EventSystem.mapDeviceId(SrcDeviceId);
+    std::tie(DstRank, DstDevId) = EventSystem.mapDeviceId(DstDeviceId);
+
+    if (SrcRank == DstRank) {
+      Event = EventSystem.createEvent(
+          OriginEvents::localExchange, EventTypeTy::LOCAL_EXCHANGE, SrcDeviceId,
+          SrcPtr, DstDeviceId, DstPtr, Size, AsyncInfo);
+    }
+
+    else {
+      Event = EventSystem.createExchangeEvent(SrcDeviceId, SrcPtr, DstDeviceId,
+                                              DstPtr, Size, AsyncInfo);
+    }
 
     if (Event.empty()) {
       REPORT("Failed to create data exchange event from %d SrcDeviceId to %d "
@@ -1240,9 +1267,11 @@ struct MPIPluginTy : public GenericPluginTy {
 
   int32_t get_global(__tgt_device_binary Binary, uint64_t Size,
                      const char *Name, void **DevicePtr) override {
+    int32_t DeviceId = DeviceImgPtrToDeviceId[Binary.handle];
+
     EventTy Event = EventSystem.createEvent(OriginEvents::getGlobal,
-                                            EventTypeTy::GET_GLOBAL, 0, Binary,
-                                            Size, Name, DevicePtr);
+                                            EventTypeTy::GET_GLOBAL, DeviceId,
+                                            Binary, Size, Name, DevicePtr);
     if (Event.empty()) {
       REPORT("Failed to create getGlobal event on device %d\n", 0);
       return OFFLOAD_FAIL;
@@ -1261,8 +1290,11 @@ struct MPIPluginTy : public GenericPluginTy {
 
   int32_t get_function(__tgt_device_binary Binary, const char *Name,
                        void **KernelPtr) override {
+
+    int32_t DeviceId = DeviceImgPtrToDeviceId[Binary.handle];
+
     EventTy Event = EventSystem.createEvent(OriginEvents::getFunction,
-                                            EventTypeTy::GET_FUNCTION, 0,
+                                            EventTypeTy::GET_FUNCTION, DeviceId,
                                             Binary, Name, KernelPtr);
     if (Event.empty()) {
       REPORT("Failed to create getFunction event on device %d\n", 0);
@@ -1282,6 +1314,7 @@ struct MPIPluginTy : public GenericPluginTy {
 
 private:
   std::mutex MPIQueueMutex;
+  llvm::DenseMap<uintptr_t, int32_t> DeviceImgPtrToDeviceId;
   EventSystemTy EventSystem;
 };
 
