@@ -328,9 +328,9 @@ EventTy retrieve(MPIRequestManagerTy RequestManager, int64_t Size, void *HstPtr,
 EventTy localExchange(MPIRequestManagerTy RequestManager, void *SrcPtr,
                       int DstDeviceId, void *DstPtr, int64_t Size,
                       __tgt_async_info *AsyncInfoPtr);
-EventTy exchange(MPIRequestManagerTy RequestManager, int SrcDevice,
-                 const void *OrgBuffer, int DstDevice, void *DstBuffer,
-                 int64_t Size);
+EventTy exchange(MPIRequestManagerTy RequestManager, int SrcRank,
+                 const void *OrgBuffer, int DstRank, void *DstBuffer,
+                 int64_t Size, __tgt_async_info *AsyncInfoPtr);
 EventTy synchronize(MPIRequestManagerTy RequestManager,
                     __tgt_async_info *AsyncInfoPtr);
 EventTy sync(EventTy Event);
@@ -507,7 +507,8 @@ public:
   /// transfer and creates a host event that waits until the transfer is
   /// completed.
   EventTy createExchangeEvent(int SrcDevice, const void *SrcBuffer,
-                              int DstDevice, void *DstBuffer, int64_t Size);
+                              int DstDevice, void *DstBuffer, int64_t Size,
+                              __tgt_async_info *AsyncInfo);
 
   /// Get the number of workers available.
   ///
