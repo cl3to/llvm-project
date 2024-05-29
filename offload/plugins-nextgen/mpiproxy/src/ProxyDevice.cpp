@@ -341,12 +341,7 @@ struct ProxyDevice {
     if (auto Err = co_await RequestManager; Err)
       co_return Err;
 
-    auto *TgtAsyncInfo = MapAsyncInfo(HstAsyncInfoPtr);
-
-    RequestManager.receive(&TgtAsyncInfo->Queue, sizeof(void *), MPI_BYTE);
-
-    if (auto Err = co_await RequestManager; Err)
-      co_return Err;
+    // auto *TgtAsyncInfo = MapAsyncInfo(HstAsyncInfoPtr);
 
     int32_t PluginId, SrcDeviceId;
 
@@ -356,29 +351,42 @@ struct ProxyDevice {
     PluginManager.Plugins[PluginId]->data_exchange_async(
         SrcDeviceId, SrcPtr, DstDeviceId, DstPtr, Size, nullptr);
 
-    RequestManager.send(&TgtAsyncInfo->Queue, sizeof(void *), MPI_BYTE);
+    RequestManager.send(nullptr, 0, MPI_BYTE);
+
     co_return (co_await RequestManager);
   }
 
   EventTy exchangeSrc(MPIRequestManagerTy RequestManager) {
-    void *SrcBuffer;
+    void *SrcBuffer, *HstAsyncInfoPtr = nullptr;
     int64_t Size;
-    int DstDevice;
+    int DstRank;
+
     // Save head node rank
     int HeadNodeRank = RequestManager.OtherRank;
 
     RequestManager.receive(&SrcBuffer, sizeof(void *), MPI_BYTE);
     RequestManager.receive(&Size, 1, MPI_INT64_T);
-    RequestManager.receive(&DstDevice, 1, MPI_INT);
+    RequestManager.receive(&DstRank, 1, MPI_INT);
+    RequestManager.receive(&HstAsyncInfoPtr, sizeof(void *), MPI_BYTE);
 
     if (auto Error = co_await RequestManager; Error)
       co_return Error;
 
+    void *HstPtr = std::malloc(Size);
+
+    int32_t PluginId, DeviceId;
+
+    std::tie(PluginId, DeviceId) =
+        EventSystem.mapDeviceId(RequestManager.DeviceId);
+
+    PluginManager.Plugins[PluginId]->data_retrieve_async(
+        DeviceId, HstPtr, SrcBuffer, Size, nullptr);
+
     // Set the Destination Rank in RequestManager
-    RequestManager.OtherRank = DstDevice;
+    RequestManager.OtherRank = DstRank;
 
     // Send buffer to target device
-    RequestManager.sendInBatchs(SrcBuffer, Size);
+    RequestManager.sendInBatchs(HstPtr, Size);
 
     if (auto Error = co_await RequestManager; Error)
       co_return Error;
@@ -393,27 +401,38 @@ struct ProxyDevice {
   }
 
   EventTy exchangeDst(MPIRequestManagerTy RequestManager) {
-    void *DstBuffer;
+    void *DstBuffer, *HstAsyncInfoPtr = nullptr;
     int64_t Size;
-    int SrcDevice;
+    int SrcRank;
     // Save head node rank
     int HeadNodeRank = RequestManager.OtherRank;
 
     RequestManager.receive(&DstBuffer, sizeof(void *), MPI_BYTE);
     RequestManager.receive(&Size, 1, MPI_INT64_T);
-    RequestManager.receive(&SrcDevice, 1, MPI_INT);
+    RequestManager.receive(&SrcRank, 1, MPI_INT);
+    RequestManager.receive(&HstAsyncInfoPtr, sizeof(void *), MPI_BYTE);
 
     if (auto Error = co_await RequestManager; Error)
       co_return Error;
+
+    void *HostPtr = std::malloc(Size);
 
     // Set the Source Rank in RequestManager
-    RequestManager.OtherRank = SrcDevice;
+    RequestManager.OtherRank = SrcRank;
 
     // Receive buffer from the Source device
-    RequestManager.receiveInBatchs(DstBuffer, Size);
+    RequestManager.receiveInBatchs(HostPtr, Size);
 
     if (auto Error = co_await RequestManager; Error)
       co_return Error;
+
+    int32_t PluginId, DeviceId;
+
+    std::tie(PluginId, DeviceId) =
+        EventSystem.mapDeviceId(RequestManager.DeviceId);
+
+    PluginManager.Plugins[PluginId]->data_submit_async(DeviceId, DstBuffer,
+                                                       HostPtr, Size, nullptr);
 
     // Set the HeadNode Rank to send the final notificatin
     RequestManager.OtherRank = HeadNodeRank;
