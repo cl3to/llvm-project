@@ -197,9 +197,8 @@ EventTy isValidBinary(MPIRequestManagerTy RequestManager,
   co_return (co_await RequestManager);
 }
 
-EventTy initDevice(MPIRequestManagerTy RequestManager, int32_t RemoteDeviceId) {
+EventTy initDevice(MPIRequestManagerTy RequestManager) {
   // Wait the complete notification
-  RequestManager.send(&RemoteDeviceId, 1, MPI_INT32_T);
   RequestManager.receive(nullptr, 0, MPI_BYTE);
   co_return (co_await RequestManager);
 }
@@ -369,56 +368,6 @@ EventTy synchronize(MPIRequestManagerTy RequestManager,
   co_return (co_await RequestManager);
 }
 
-EventTy createEvent(MPIRequestManagerTy RequestManager, void **EventPtr) {
-  RequestManager.receive(EventPtr, sizeof(void *), MPI_BYTE);
-
-  co_return (co_await RequestManager);
-}
-
-EventTy recordEvent(MPIRequestManagerTy RequestManager, void *EventPtr,
-                    __tgt_async_info *AsyncInfoPtr) {
-  RequestManager.send(&AsyncInfoPtr, sizeof(void *), MPI_BYTE);
-  RequestManager.send(&AsyncInfoPtr->Queue, sizeof(void *), MPI_BYTE);
-  RequestManager.send(&EventPtr, sizeof(void *), MPI_BYTE);
-
-  if (auto Err = co_await RequestManager; Err)
-    co_return Err;
-
-  RequestManager.receive(&AsyncInfoPtr->Queue, sizeof(void *), MPI_BYTE);
-
-  co_return (co_await RequestManager);
-}
-
-EventTy waitEvent(MPIRequestManagerTy RequestManager, void *EventPtr,
-                  __tgt_async_info *AsyncInfoPtr) {
-  RequestManager.send(&AsyncInfoPtr, sizeof(void *), MPI_BYTE);
-  RequestManager.send(&AsyncInfoPtr->Queue, sizeof(void *), MPI_BYTE);
-  RequestManager.send(&EventPtr, sizeof(void *), MPI_BYTE);
-
-  if (auto Err = co_await RequestManager; Err)
-    co_return Err;
-
-  RequestManager.receive(&AsyncInfoPtr->Queue, sizeof(void *), MPI_BYTE);
-
-  co_return (co_await RequestManager);
-}
-
-EventTy syncEvent(MPIRequestManagerTy RequestManager, void *EventPtr) {
-  RequestManager.send(&EventPtr, sizeof(void *), MPI_BYTE);
-
-  // Event completion notification
-  RequestManager.receive(nullptr, 0, MPI_BYTE);
-  co_return (co_await RequestManager);
-}
-
-EventTy destroyEvent(MPIRequestManagerTy RequestManager, void *EventPtr) {
-  RequestManager.send(&EventPtr, sizeof(void *), MPI_BYTE);
-
-  // Event completion notification
-  RequestManager.receive(nullptr, 0, MPI_BYTE);
-  co_return (co_await RequestManager);
-}
-
 EventTy sync(EventTy Event) {
   while (!Event.done())
     co_await std::suspend_always{};
@@ -537,13 +486,13 @@ EventTy exit(MPIRequestManagerTy RequestManager) {
 EventQueue::EventQueue() : Queue(), QueueMtx(), CanPopCv() {}
 
 size_t EventQueue::size() {
-  std::lock_guard<std::mutex> lock(QueueMtx);
+  std::lock_guard<std::mutex> Lock(QueueMtx);
   return Queue.size();
 }
 
 void EventQueue::push(EventTy &&Event) {
   {
-    std::unique_lock<std::mutex> lock(QueueMtx);
+    std::unique_lock<std::mutex> Lock(QueueMtx);
     Queue.emplace(Event);
   }
 

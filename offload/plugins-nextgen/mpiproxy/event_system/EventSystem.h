@@ -66,11 +66,6 @@ enum class EventTypeTy : unsigned int {
   GET_GLOBAL,          // Look up a global symbol in the given binary
   GET_FUNCTION,        // Look up a kernel function in the given binary.
   SYNCHRONIZE,         // Sync all events in the device.
-  CREATE_EVENT,        // Creates an event in the given plugin if supported.
-  RECORD_EVENT,        // Records an event that has occurred.
-  WAIT_EVENT,          // Wait until an event has occurred.
-  SYNC_EVENT,          // Syncrhonize execution until an event is done.
-  DESTROY_EVENT,       // Remove the event from the plugin.
   INIT_ASYNC_INFO,
   INIT_DEVICE_INFO,
   QUERY_ASYNC,
@@ -79,18 +74,17 @@ enum class EventTypeTy : unsigned int {
   DATA_UNLOCK,
   DATA_NOTIFY_MAPPED,
   DATA_NOTIFY_UNMAPPED,
-  LOCAL_EXCHANGE, // Wait data exchange between two remote processes.
 
   // Memory management.
   ALLOC,  // Allocates a buffer at the remote process.
   DELETE, // Deletes a buffer at the remote process.
 
   // Data movement.
-  SUBMIT,       // Sends a buffer data to a remote process.
-  RETRIEVE,     // Receives a buffer data from a remote process.
-  EXCHANGE,     // Wait data exchange between two remote processes.
-  EXCHANGE_SRC, // SRC side of the exchange event.
-  EXCHANGE_DST, // DST side of the exchange event.
+  SUBMIT,         // Sends a buffer data to a remote process.
+  RETRIEVE,       // Receives a buffer data from a remote process.
+  LOCAL_EXCHANGE, // Data exchange between two devices in one remote process.
+  EXCHANGE_SRC, // SRC side of the exchange event between two remote processes.
+  EXCHANGE_DST, // DST side of the exchange event between two remote processes.
 
   // Target region execution.
   LAUNCH_KERNEL, // Executes a target region at the remote process.
@@ -310,7 +304,7 @@ EventTy retrieveNumDevices(MPIRequestManagerTy RequestManager,
 EventTy isValidBinary(MPIRequestManagerTy RequestManager,
                       __tgt_device_image *Image, bool Initialized,
                       bool *QueryResult);
-EventTy initDevice(MPIRequestManagerTy RequestManager, int32_t RemoteDeviceId);
+EventTy initDevice(MPIRequestManagerTy RequestManager);
 EventTy initRecordReplay(MPIRequestManagerTy RequestManager, int64_t MemorySize,
                          void *VAddr, bool IsRecord, bool SaveOutput,
                          uint64_t *ReqPtrArgOffset);
@@ -347,13 +341,6 @@ EventTy launchKernel(MPIRequestManagerTy RequestManager, void *TgtEntryPtr,
                      EventDataHandleTy TgtArgs, EventDataHandleTy TgtOffsets,
                      EventDataHandleTy KernelArgsHandle,
                      __tgt_async_info *AsyncInfoPtr);
-EventTy createEvent(MPIRequestManagerTy RequestManager, void **EventPtr);
-EventTy recordEvent(MPIRequestManagerTy RequestManager, void *EventPtr,
-                    __tgt_async_info *AsyncInfoPtr);
-EventTy waitEvent(MPIRequestManagerTy RequestManager, void *EventPtr,
-                  __tgt_async_info *AsyncInfoPtr);
-EventTy syncEvent(MPIRequestManagerTy RequestManager, void *EventPtr);
-EventTy destroyEvent(MPIRequestManagerTy RequestManager, void *EventPtr);
 EventTy initAsyncInfo(MPIRequestManagerTy RequestManager,
                       __tgt_async_info **AsyncInfoPtr);
 EventTy initDeviceInfo(MPIRequestManagerTy RequestManager,

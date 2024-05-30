@@ -138,11 +138,6 @@ struct ProxyDevice {
   EventTy initDevice(MPIRequestManagerTy RequestManager) {
     int32_t DeviceId, PluginId;
 
-    RequestManager.receive(&DeviceId, 1, MPI_INT32_T);
-
-    if (auto Error = co_await RequestManager; Error)
-      co_return Error;
-
     std::tie(PluginId, DeviceId) =
         EventSystem.mapDeviceId(RequestManager.DeviceId);
 
@@ -642,117 +637,6 @@ struct ProxyDevice {
     co_return (co_await RequestManager);
   }
 
-  EventTy createEvent(MPIRequestManagerTy RequestManager) {
-    void *EventPtr = nullptr;
-
-    int32_t PluginId, DeviceId;
-
-    std::tie(PluginId, DeviceId) =
-        EventSystem.mapDeviceId(RequestManager.DeviceId);
-
-    PluginManager.Plugins[PluginId]->create_event(DeviceId, &EventPtr);
-
-    RequestManager.send(&EventPtr, sizeof(void *), MPI_BYTE);
-
-    co_return (co_await RequestManager);
-  }
-
-  EventTy recordEvent(MPIRequestManagerTy RequestManager) {
-    void *HstAsyncInfoPtr = nullptr, *EventPtr = nullptr;
-
-    RequestManager.receive(&HstAsyncInfoPtr, sizeof(void *), MPI_BYTE);
-
-    if (auto Error = co_await RequestManager; Error)
-      co_return Error;
-
-    auto *TgtAsyncInfo = MapAsyncInfo(HstAsyncInfoPtr);
-
-    RequestManager.receive(&TgtAsyncInfo->Queue, sizeof(void *), MPI_BYTE);
-    RequestManager.receive(&EventPtr, sizeof(void *), MPI_BYTE);
-
-    if (auto Error = co_await RequestManager; Error)
-      co_return Error;
-
-    int32_t PluginId, DeviceId;
-
-    std::tie(PluginId, DeviceId) =
-        EventSystem.mapDeviceId(RequestManager.DeviceId);
-
-    PluginManager.Plugins[PluginId]->record_event(DeviceId, EventPtr,
-                                                  TgtAsyncInfo);
-
-    RequestManager.send(&TgtAsyncInfo->Queue, sizeof(void *), MPI_BYTE);
-
-    co_return (co_await RequestManager);
-  }
-
-  EventTy waitEvent(MPIRequestManagerTy RequestManager) {
-    void *HstAsyncInfoPtr = nullptr, *EventPtr = nullptr;
-
-    RequestManager.receive(&HstAsyncInfoPtr, sizeof(void *), MPI_BYTE);
-
-    if (auto Error = co_await RequestManager; Error)
-      co_return Error;
-
-    auto *TgtAsyncInfo = MapAsyncInfo(HstAsyncInfoPtr);
-
-    RequestManager.receive(&TgtAsyncInfo->Queue, sizeof(void *), MPI_BYTE);
-    RequestManager.receive(&EventPtr, sizeof(void *), MPI_BYTE);
-
-    if (auto Error = co_await RequestManager; Error)
-      co_return Error;
-
-    int32_t PluginId, DeviceId;
-
-    std::tie(PluginId, DeviceId) =
-        EventSystem.mapDeviceId(RequestManager.DeviceId);
-
-    PluginManager.Plugins[PluginId]->wait_event(DeviceId, EventPtr,
-                                                TgtAsyncInfo);
-
-    RequestManager.send(&TgtAsyncInfo->Queue, sizeof(void *), MPI_BYTE);
-
-    co_return (co_await RequestManager);
-  }
-
-  EventTy syncEvent(MPIRequestManagerTy RequestManager) {
-    void *EventPtr = nullptr;
-    RequestManager.receive(&EventPtr, sizeof(void *), MPI_BYTE);
-
-    if (auto Error = co_await RequestManager; Error)
-      co_return Error;
-
-    int32_t PluginId, DeviceId;
-
-    std::tie(PluginId, DeviceId) =
-        EventSystem.mapDeviceId(RequestManager.DeviceId);
-
-    PluginManager.Plugins[PluginId]->sync_event(DeviceId, EventPtr);
-
-    // Event completion notification
-    RequestManager.send(nullptr, 0, MPI_BYTE);
-    co_return (co_await RequestManager);
-  }
-
-  EventTy destroyEvent(MPIRequestManagerTy RequestManager) {
-    void *EventPtr = nullptr;
-    RequestManager.receive(&EventPtr, sizeof(void *), MPI_BYTE);
-
-    if (auto Error = co_await RequestManager; Error)
-      co_return Error;
-
-    int32_t PluginId, DeviceId;
-
-    std::tie(PluginId, DeviceId) =
-        EventSystem.mapDeviceId(RequestManager.DeviceId);
-
-    PluginManager.Plugins[PluginId]->destroy_event(DeviceId, EventPtr);
-
-    // Event completion notification
-    RequestManager.send(nullptr, 0, MPI_BYTE);
-    co_return (co_await RequestManager);
-  }
-
   EventTy initAsyncInfo(MPIRequestManagerTy RequestManager) {
     __tgt_async_info *TgtAsyncInfoPtr = nullptr;
 
@@ -1055,21 +939,6 @@ struct ProxyDevice {
       case SYNCHRONIZE:
         NewEvent = synchronize(std::move(RequestManager));
         break;
-      case CREATE_EVENT:
-        NewEvent = createEvent(std::move(RequestManager));
-        break;
-      case RECORD_EVENT:
-        NewEvent = recordEvent(std::move(RequestManager));
-        break;
-      case WAIT_EVENT:
-        NewEvent = waitEvent(std::move(RequestManager));
-        break;
-      case SYNC_EVENT:
-        NewEvent = syncEvent(std::move(RequestManager));
-        break;
-      case DESTROY_EVENT:
-        NewEvent = destroyEvent(std::move(RequestManager));
-        break;
       case INIT_ASYNC_INFO:
         NewEvent = initAsyncInfo(std::move(RequestManager));
         break;
@@ -1095,7 +964,6 @@ struct ProxyDevice {
         NewEvent = dataNotifyUnmapped(std::move(RequestManager));
         break;
       case SYNC:
-      case EXCHANGE:
         assert(false && "Trying to create a local event on a remote node");
       }
 
