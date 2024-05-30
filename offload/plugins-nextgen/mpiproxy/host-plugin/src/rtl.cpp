@@ -10,6 +10,7 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include <chrono>
 #include <cstddef>
 #include <cstdint>
 #include <cstdlib>
@@ -17,6 +18,7 @@
 #include <list>
 #include <optional>
 #include <string>
+#include <thread>
 #include <tuple>
 
 #include "Shared/APITypes.h"
@@ -918,22 +920,16 @@ struct MPIPluginTy : public GenericPluginTy {
     MPIEventQueuePtr Queue =
         reinterpret_cast<MPIEventQueuePtr>(AsyncInfoPtr->Queue);
 
-    // EventTy Event = EventSystem.createEvent(OriginEvents::synchronize,
-    //                                         EventTypeTy::SYNCHRONIZE,
-    //                                         DeviceId, AsyncInfoPtr);
+    EventTy Event = EventSystem.createEvent(OriginEvents::synchronize,
+                                            EventTypeTy::SYNCHRONIZE, DeviceId,
+                                            AsyncInfoPtr);
 
-    // if (Event.empty()) {
-    //   REPORT("Failed to create synchronize event on device %d\n", DeviceId);
-    //   return OFFLOAD_FAIL;
-    // }
+    if (Event.empty()) {
+      REPORT("Failed to create synchronize event on device %d\n", DeviceId);
+      return OFFLOAD_FAIL;
+    }
 
-    // Event.wait();
-
-    // if (auto Error = Event.getError()) {
-    //   REPORT("Failure to synchronize queue %p: %s\n", AsyncInfoPtr->Queue,
-    //          toString(std::move(Error)).data());
-    //   return OFFLOAD_FAIL;
-    // }
+    Queue->push_back(Event);
 
     for (auto &Event : *Queue) {
       Event.wait();
@@ -955,28 +951,17 @@ struct MPIPluginTy : public GenericPluginTy {
       return OFFLOAD_FAIL;
     }
 
+    // FIXME: Since operations on remote devices are asynchronous, we need to
+    // wait for a certain period to complete operations, such as printing on
+    // stdout in the remote process, to ensure the order of such operations
+    // between the host and devices.
+    // std::this_thread::sleep_for(std::chrono::milliseconds(100));
+
     return OFFLOAD_SUCCESS;
   }
 
   int32_t query_async(int32_t DeviceId,
                       __tgt_async_info *AsyncInfoPtr) override {
-    // EventTy Event = EventSystem.createEvent(OriginEvents::queryAsync,
-    //                                         EventTypeTy::QUERY_ASYNC,
-    //                                         DeviceId, AsyncInfoPtr);
-
-    // if (Event.empty()) {
-    //   REPORT("Failed to create queryAsync event on device %d\n", DeviceId);
-    //   return OFFLOAD_FAIL;
-    // }
-
-    // Event.wait();
-
-    // if (auto Error = Event.getError()) {
-    //   REPORT("Failure to query queue %p: %s\n", AsyncInfoPtr->Queue,
-    //          toString(std::move(Error)).data());
-    //   return OFFLOAD_FAIL;
-    // }
-
     auto *Queue = reinterpret_cast<MPIEventQueue *>(AsyncInfoPtr->Queue);
 
     // Returns success when there are pending operations in AsyncInfo, moving
@@ -1043,23 +1028,6 @@ struct MPIPluginTy : public GenericPluginTy {
 
     *EventPtr = reinterpret_cast<void *>(NewEvent);
 
-    // EventTy Event =
-    //     EventSystem.createEvent(OriginEvents::createEvent,
-    //                             EventTypeTy::CREATE_EVENT, DeviceId,
-    //                             EventPtr);
-
-    // if (Event.empty()) {
-    //   REPORT("Failed to create createEvent on device %d\n", DeviceId);
-    //   return OFFLOAD_FAIL;
-    // }
-
-    // Event.wait();
-
-    // if (auto Err = Event.getError()) {
-    //   REPORT("Failure to create event: %s\n",
-    //   toString(std::move(Err)).data()); return OFFLOAD_FAIL;
-    // }
-
     return OFFLOAD_SUCCESS;
   }
 
@@ -1083,24 +1051,6 @@ struct MPIPluginTy : public GenericPluginTy {
     auto &RecordedEvent = *reinterpret_cast<EventTy *>(EventPtr);
     RecordedEvent = Queue->back();
 
-    // EventTy Event = EventSystem.createEvent(OriginEvents::recordEvent,
-    //                                         EventTypeTy::RECORD_EVENT,
-    //                                         DeviceId, EventPtr,
-    //                                         AsyncInfoPtr);
-
-    // if (Event.empty()) {
-    //   REPORT("Failed to create recordEvent on device %d\n", DeviceId);
-    //   return OFFLOAD_FAIL;
-    // }
-
-    // Event.wait();
-
-    // if (auto Err = Event.getError()) {
-    //   REPORT("Failure to record event %p: %s\n", EventPtr,
-    //          toString(std::move(Err)).data());
-    //   return OFFLOAD_FAIL;
-    // }
-
     return OFFLOAD_SUCCESS;
   }
 
@@ -1123,24 +1073,6 @@ struct MPIPluginTy : public GenericPluginTy {
 
     Queue->push_back(SyncEvent);
 
-    // EventTy Event = EventSystem.createEvent(OriginEvents::waitEvent,
-    //                                         EventTypeTy::WAIT_EVENT,
-    //                                         DeviceId, EventPtr,
-    //                                         AsyncInfoPtr);
-
-    // if (Event.empty()) {
-    //   REPORT("Failed to create waitEvent on device %d\n", DeviceId);
-    //   return OFFLOAD_FAIL;
-    // }
-
-    // Event.wait();
-
-    // if (auto Err = Event.getError()) {
-    //   REPORT("Failure to wait event %p: %s\n", EventPtr,
-    //          toString(std::move(Err)).data());
-    //   return OFFLOAD_FAIL;
-    // }
-
     return OFFLOAD_SUCCESS;
   }
 
@@ -1161,23 +1093,6 @@ struct MPIPluginTy : public GenericPluginTy {
       return OFFLOAD_FAIL;
     }
 
-    // EventTy Event = EventSystem.createEvent(
-    //     OriginEvents::syncEvent, EventTypeTy::SYNC_EVENT, DeviceId,
-    //     EventPtr);
-
-    // if (Event.empty()) {
-    //   REPORT("Failed to create syncEvent on device %d\n", DeviceId);
-    //   return OFFLOAD_FAIL;
-    // }
-
-    // Event.wait();
-
-    // if (auto Err = Event.getError()) {
-    //   REPORT("Failure to synchronize event %p: %s\n", EventPtr,
-    //          toString(std::move(Err)).data());
-    //   return OFFLOAD_FAIL;
-    // }
-
     return OFFLOAD_SUCCESS;
   }
 
@@ -1191,24 +1106,6 @@ struct MPIPluginTy : public GenericPluginTy {
     EventTy *MPIEventPtr = reinterpret_cast<EventTy *>(EventPtr);
 
     delete MPIEventPtr;
-
-    // EventTy Event =
-    //     EventSystem.createEvent(OriginEvents::destroyEvent,
-    //                             EventTypeTy::DESTROY_EVENT, DeviceId,
-    //                             EventPtr);
-
-    // if (Event.empty()) {
-    //   REPORT("Failed to create destroyEvent on device %d\n", DeviceId);
-    //   return OFFLOAD_FAIL;
-    // }
-
-    // Event.wait();
-
-    // if (auto Err = Event.getError()) {
-    //   REPORT("Failure to destroy event %p: %s\n", EventPtr,
-    //          toString(std::move(Err)).data());
-    //   return OFFLOAD_FAIL;
-    // }
 
     return OFFLOAD_SUCCESS;
   }
