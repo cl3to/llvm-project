@@ -574,8 +574,8 @@ struct MPIPluginTy : public GenericPluginTy {
   }
 
   int32_t init_device(int32_t DeviceId) override {
-    EventTy Event = EventSystem.createEvent(
-        OriginEvents::initDevice, EventTypeTy::INIT_DEVICE, DeviceId, DeviceId);
+    EventTy Event = EventSystem.createEvent(OriginEvents::initDevice,
+                                            EventTypeTy::INIT_DEVICE, DeviceId);
 
     if (Event.empty()) {
       REPORT("Error to create InitDevice Event for device %d\n", DeviceId);
