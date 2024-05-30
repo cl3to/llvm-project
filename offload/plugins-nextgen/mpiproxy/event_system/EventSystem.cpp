@@ -254,9 +254,6 @@ EventTy submit(MPIRequestManagerTy RequestManager, void *TgtPtr,
 
   RequestManager.sendInBatchs(HstPtr.get(), Size);
 
-  if (auto Err = co_await RequestManager; Err)
-    co_return Err;
-
   // Event completion notification
   RequestManager.receive(nullptr, 0, MPI_BYTE);
 
@@ -270,9 +267,6 @@ EventTy retrieve(MPIRequestManagerTy RequestManager, int64_t Size, void *HstPtr,
   RequestManager.send(&TgtPtr, sizeof(void *), MPI_BYTE);
   RequestManager.send(&Size, 1, MPI_INT64_T);
   RequestManager.receiveInBatchs(HstPtr, Size);
-
-  if (auto Err = co_await RequestManager; Err)
-    co_return Err;
 
   // Event completion notification
   RequestManager.receive(nullptr, 0, MPI_BYTE);
@@ -371,7 +365,7 @@ EventTy synchronize(MPIRequestManagerTy RequestManager,
   RequestManager.send(&AsyncInfoPtr, sizeof(void *), MPI_BYTE);
 
   // Event completion notification
-  // RequestManager.receive(nullptr, 0, MPI_BYTE);
+  RequestManager.receive(nullptr, 0, MPI_BYTE);
   co_return (co_await RequestManager);
 }
 
