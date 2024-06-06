@@ -956,7 +956,6 @@ struct MPIPluginTy : public GenericPluginTy {
 
   int32_t synchronize(int32_t DeviceId,
                       __tgt_async_info *AsyncInfoPtr) override {
-
     MPIEventQueuePtr Queue =
         reinterpret_cast<MPIEventQueuePtr>(AsyncInfoPtr->Queue);
 
