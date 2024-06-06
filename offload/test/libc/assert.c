@@ -5,6 +5,7 @@
 
 // NVPTX without LTO uses the implementation in OpenMP currently.
 // UNSUPPORTED: nvptx64-nvidia-cuda
+// UNSUPPORTED: nvptx64-nvidia-cuda-mpi
 // UNSUPPORTED: powerpc64-ibm-linux-gnu
 // UNSUPPORTED: powerpc64-ibm-linux-gnu-LTO
 // UNSUPPORTED: aarch64-unknown-linux-gnu
