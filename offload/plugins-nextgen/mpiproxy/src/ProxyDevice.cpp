@@ -73,12 +73,18 @@ struct ProxyDevice {
   EventTy waitAsyncOpEnd(int32_t PluginId, int32_t DeviceId,
                          void *AsyncInfoPtr) {
     auto *TgtAsyncInfo = MapAsyncInfo(AsyncInfoPtr);
+    auto *RPCServer =
+        PluginManager.Plugins[PluginId]->getDevice(DeviceId).getRPCServer();
 
     while (TgtAsyncInfo->Queue != nullptr) {
       if (PluginManager.Plugins[PluginId]->query_async(
               DeviceId, TgtAsyncInfo) == OFFLOAD_FAIL)
         co_return createError("Failure to wait AsyncOp\n");
 
+      if (RPCServer)
+        if (auto Err = RPCServer->runServer(
+                PluginManager.Plugins[PluginId]->getDevice(DeviceId)))
+          co_return Err;
       co_await std::suspend_always{};
     }
 
@@ -979,7 +985,7 @@ struct ProxyDevice {
   }
 
 private:
-  llvm::SmallVector<__tgt_async_info> AsyncInfoList{};
+  llvm::SmallVector<__tgt_async_info, 16> AsyncInfoList{};
   llvm::SmallVector<DeviceImage, 1> RemoteImages;
   llvm::DenseMap<void *, void *> AsyncInfoTable;
   RemotePluginManager PluginManager;
