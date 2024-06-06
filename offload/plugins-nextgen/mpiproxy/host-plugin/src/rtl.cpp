@@ -645,43 +645,83 @@ struct MPIPluginTy : public GenericPluginTy {
 
   void *data_alloc(int32_t DeviceId, int64_t Size, void *HostPtr,
                    int32_t Kind) override {
-    void *Buffer = nullptr;
-
-    EventTy Event = EventSystem.createEvent(OriginEvents::allocateBuffer,
-                                            EventTypeTy::ALLOC, DeviceId, Size,
-                                            Kind, &Buffer);
-
-    if (Event.empty()) {
-      REPORT("Failed to create alloc event with size %ld\n", Size);
+    if (Size == 0)
       return nullptr;
+
+    void *TgtPtr = nullptr;
+    std::optional<Error> Err = std::nullopt;
+    EventTy Event;
+
+    switch (Kind) {
+    case TARGET_ALLOC_DEFAULT:
+    case TARGET_ALLOC_DEVICE:
+    case TARGET_ALLOC_DEVICE_NON_BLOCKING:
+      Event = EventSystem.createEvent(OriginEvents::allocateBuffer,
+                                      EventTypeTy::ALLOC, DeviceId, Size, Kind,
+                                      &TgtPtr);
+
+      if (Event.empty()) {
+        Err = Plugin::error("Failed to create alloc event with size %z", Size);
+        break;
+      }
+
+      Event.wait();
+      Err = Event.getError();
+      break;
+    case TARGET_ALLOC_HOST:
+      TgtPtr = memAllocHost(Size);
+      Err = Plugin::check(TgtPtr == nullptr, "Failed to allocate host memory");
+      break;
+    case TARGET_ALLOC_SHARED:
+      Err = Plugin::error("Incompatible memory type %d", Kind);
+      break;
     }
 
-    Event.wait();
-
-    if (auto Error = Event.getError(); Error) {
+    if (*Err) {
       REPORT("Failed to allocate data for HostPtr %p: %s\n", HostPtr,
-             toString(std::move(Error)).c_str());
+             toString(std::move(*Err)).c_str());
       return nullptr;
     }
 
-    return Buffer;
+    return TgtPtr;
   }
 
   int32_t data_delete(int32_t DeviceId, void *TgtPtr, int32_t Kind) override {
-    EventTy Event =
-        EventSystem.createEvent(OriginEvents::deleteBuffer, EventTypeTy::DELETE,
-                                DeviceId, TgtPtr, Kind);
+    if (TgtPtr == nullptr)
+      return OFFLOAD_SUCCESS;
 
-    if (Event.empty()) {
-      REPORT("Failed to create data delete event for %p TgtPtr\n", TgtPtr);
-      return OFFLOAD_FAIL;
+    std::optional<Error> Err = std::nullopt;
+    EventTy Event;
+
+    switch (Kind) {
+    case TARGET_ALLOC_DEFAULT:
+    case TARGET_ALLOC_DEVICE:
+    case TARGET_ALLOC_DEVICE_NON_BLOCKING:
+      Event =
+          EventSystem.createEvent(OriginEvents::deleteBuffer,
+                                  EventTypeTy::DELETE, DeviceId, TgtPtr, Kind);
+
+      if (Event.empty()) {
+        Err = Plugin::error("Failed to create data delete event for %p TgtPtr",
+                            TgtPtr);
+        break;
+      }
+
+      Event.wait();
+      Err = Event.getError();
+      break;
+    case TARGET_ALLOC_HOST:
+      Err = Plugin::check(memFreeHost(TgtPtr), "Failed to free host memory");
+      break;
+    case TARGET_ALLOC_SHARED:
+      Err = createStringError(inconvertibleErrorCode(),
+                              "Incompatible memory type %d", Kind);
+      break;
     }
 
-    Event.wait();
-
-    if (auto Error = Event.getError()) {
+    if (*Err) {
       REPORT("Failed delete data at %p TgtPtr: %s\n", TgtPtr,
-             toString(std::move(Error)).c_str());
+             toString(std::move(*Err)).c_str());
       return OFFLOAD_FAIL;
     }
 
