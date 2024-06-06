@@ -63,7 +63,9 @@ struct ProxyDevice {
       TgtAsyncInfoPtr =
           static_cast<__tgt_async_info *>(AsyncInfoTable[HostAsyncInfoPtr]);
     else {
-      TgtAsyncInfoPtr = &AsyncInfoList.emplace_back();
+      std::unique_ptr<__tgt_async_info> newEntry =
+          std::make_unique<__tgt_async_info>();
+      TgtAsyncInfoPtr = AsyncInfoList.emplace_back(std::move(newEntry)).get();
       AsyncInfoTable[HostAsyncInfoPtr] = static_cast<void *>(TgtAsyncInfoPtr);
     }
 
@@ -294,7 +296,6 @@ struct ProxyDevice {
       co_return Error;
 
     auto *TgtAsyncInfo = MapAsyncInfo(HstAsyncInfoPtr);
-
     RequestManager.receive(&TgtPtr, sizeof(void *), MPI_BYTE);
     RequestManager.receive(&Size, 1, MPI_INT64_T);
 
@@ -985,7 +986,7 @@ struct ProxyDevice {
   }
 
 private:
-  llvm::SmallVector<__tgt_async_info, 16> AsyncInfoList{};
+  llvm::SmallVector<std::unique_ptr<__tgt_async_info>, 16> AsyncInfoList;
   llvm::SmallVector<DeviceImage, 1> RemoteImages;
   llvm::DenseMap<void *, void *> AsyncInfoTable;
   RemotePluginManager PluginManager;
