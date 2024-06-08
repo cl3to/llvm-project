@@ -36,12 +36,8 @@ struct ProxyDevice {
 
     EventSystem.initialize();
     PluginManager.init();
-    for (int PluginId = 0; PluginId < PluginManager.getNumUsedPlugins();
-         PluginId++) {
-      EventSystem.DevicesPerRemote.emplace_back(
-          PluginManager.getNumDevices(PluginId));
-    }
   }
+
   ~ProxyDevice() {
     EventSystem.deinitialize();
     PluginManager.deinit();
@@ -100,9 +96,9 @@ struct ProxyDevice {
     co_return (co_await RequestManager);
   }
 
-  EventTy isValidBinary(MPIRequestManagerTy RequestManager) {
+  EventTy isPluginCompatible(MPIRequestManagerTy RequestManager) {
     __tgt_device_image Image;
-    bool Initialized = false, QueryResult = false;
+    bool QueryResult = false;
 
     uint64_t Size = 0;
 
@@ -111,9 +107,8 @@ struct ProxyDevice {
     if (auto Err = co_await RequestManager; Err)
       co_return Err;
 
-    Image.ImageStart = std::malloc(Size);
+    Image.ImageStart = memAllocHost(Size);
     RequestManager.receive(Image.ImageStart, Size, MPI_BYTE);
-    RequestManager.receive(&Initialized, sizeof(bool), MPI_BYTE);
 
     if (auto Err = co_await RequestManager; Err)
       co_return Err;
@@ -123,7 +118,7 @@ struct ProxyDevice {
     llvm::SmallVector<std::unique_ptr<GenericPluginTy>> UsedPlugins;
 
     for (auto &Plugin : PluginManager.Plugins) {
-      QueryResult = Plugin->is_valid_binary(&Image, Initialized);
+      QueryResult = Plugin->is_plugin_compatible(&Image);
       if (QueryResult) {
         UsedPlugins.emplace_back(std::move(Plugin));
         break;
@@ -138,7 +133,39 @@ struct ProxyDevice {
     PluginManager.Plugins = std::move(UsedPlugins);
     mapDevicesPerRemote();
 
-    free(Image.ImageStart);
+    memFreeHost(Image.ImageStart);
+    RequestManager.send(&QueryResult, sizeof(bool), MPI_BYTE);
+    co_return (co_await RequestManager);
+  }
+
+  EventTy isDeviceCompatible(MPIRequestManagerTy RequestManager) {
+    __tgt_device_image Image;
+    bool QueryResult = false;
+
+    uint64_t Size = 0;
+
+    RequestManager.receive(&Size, 1, MPI_UINT64_T);
+
+    if (auto Err = co_await RequestManager; Err)
+      co_return Err;
+
+    Image.ImageStart = memAllocHost(Size);
+    RequestManager.receive(Image.ImageStart, Size, MPI_BYTE);
+
+    if (auto Err = co_await RequestManager; Err)
+      co_return Err;
+
+    Image.ImageEnd = (void *)((ptrdiff_t)(Image.ImageStart) + Size);
+
+    int32_t DeviceId, PluginId;
+
+    std::tie(PluginId, DeviceId) =
+        EventSystem.mapDeviceId(RequestManager.DeviceId);
+
+    QueryResult =
+        PluginManager.Plugins[PluginId]->is_device_compatible(DeviceId, &Image);
+
+    memFreeHost(Image.ImageStart);
     RequestManager.send(&QueryResult, sizeof(bool), MPI_BYTE);
     co_return (co_await RequestManager);
   }
@@ -151,8 +178,10 @@ struct ProxyDevice {
 
     PluginManager.Plugins[PluginId]->init_device(DeviceId);
 
+    auto *DevicePtr = &PluginManager.Plugins[PluginId]->getDevice(DeviceId);
+
     // Event completion notification
-    RequestManager.send(nullptr, 0, MPI_BYTE);
+    RequestManager.send(&DevicePtr, sizeof(void *), MPI_BYTE);
 
     co_return (co_await RequestManager);
   }
@@ -265,13 +294,13 @@ struct ProxyDevice {
     if (auto Error = co_await RequestManager; Error)
       co_return Error;
 
-    void *HstPtr = malloc(Size);
+    void *HstPtr = memAllocHost(Size);
     RequestManager.receiveInBatchs(HstPtr, Size);
 
     if (auto Error = co_await RequestManager; Error)
       co_return Error;
 
-    EventDataHandleTy DataHandle(HstPtr, &std::free);
+    EventDataHandleTy DataHandle(HstPtr, &memFreeHost);
     int32_t PluginId, DeviceId;
 
     std::tie(PluginId, DeviceId) =
@@ -302,8 +331,8 @@ struct ProxyDevice {
     if (auto Error = co_await RequestManager; Error)
       co_return Error;
 
-    void *HstPtr = malloc(Size);
-    EventDataHandleTy DataHandle(HstPtr, &std::free);
+    void *HstPtr = memAllocHost(Size);
+    EventDataHandleTy DataHandle(HstPtr, &memFreeHost);
     int32_t PluginId, DeviceId;
 
     std::tie(PluginId, DeviceId) =
@@ -373,7 +402,7 @@ struct ProxyDevice {
 
     auto *TgtAsyncInfo = MapAsyncInfo(HstAsyncInfoPtr);
 
-    void *HstPtr = std::malloc(Size);
+    void *HstPtr = memAllocHost(Size);
 
     int32_t PluginId, DeviceId;
 
@@ -403,7 +432,7 @@ struct ProxyDevice {
     // Event completion notification
     RequestManager.send(nullptr, 0, MPI_BYTE);
 
-    std::free(HstPtr);
+    memFreeHost(HstPtr);
     co_return (co_await RequestManager);
   }
 
@@ -422,7 +451,7 @@ struct ProxyDevice {
     if (auto Error = co_await RequestManager; Error)
       co_return Error;
 
-    void *HstPtr = std::malloc(Size);
+    void *HstPtr = memAllocHost(Size);
 
     // Set the Source Rank in RequestManager
     RequestManager.OtherRank = SrcRank;
@@ -454,7 +483,7 @@ struct ProxyDevice {
     // Event completion notification
     RequestManager.send(nullptr, 0, MPI_BYTE);
 
-    std::free(HstPtr);
+    memFreeHost(HstPtr);
 
     co_return (co_await RequestManager);
   }
@@ -894,8 +923,11 @@ struct ProxyDevice {
       case RETRIEVE_NUM_DEVICES:
         NewEvent = retrieveNumDevices(std::move(RequestManager));
         break;
-      case IS_VALID_BINARY:
-        NewEvent = isValidBinary(std::move(RequestManager));
+      case IS_PLUGIN_COMPATIBLE:
+        NewEvent = isPluginCompatible(std::move(RequestManager));
+        break;
+      case IS_DEVICE_COMPATIBLE:
+        NewEvent = isDeviceCompatible(std::move(RequestManager));
         break;
       case INIT_DEVICE:
         NewEvent = initDevice(std::move(RequestManager));
