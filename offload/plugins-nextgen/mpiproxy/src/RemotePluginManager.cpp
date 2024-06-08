@@ -94,5 +94,11 @@ int RemotePluginManager::getNumDevices() {
 int RemotePluginManager::getNumDevices(int32_t PluginId) {
   int32_t NumPlugins = getNumUsedPlugins();
   assert(PluginId < NumPlugins && "Invalid PluginId");
+  if (!Plugins[PluginId]->is_initialized()) {
+    if (auto Err = Plugins[PluginId]->init()) {
+      [[maybe_unused]] std::string InfoMsg = toString(std::move(Err));
+      DP("Failed to init plugin: %s\n", InfoMsg.c_str());
+    }
+  }
   return Plugins[PluginId]->number_of_devices();
 }
