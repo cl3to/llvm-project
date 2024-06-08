@@ -10,7 +10,6 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include <chrono>
 #include <cstddef>
 #include <cstdint>
 #include <cstdlib>
@@ -408,8 +407,12 @@ struct MPIPluginTy : public GenericPluginTy {
 
   /// Initialize the plugin and return the number of devices.
   Expected<int32_t> initImpl() override {
-    EventSystem.initialize();
-    return getNumRemoteDevices();
+    if (!EventSystem.is_initialized())
+      EventSystem.initialize();
+    int32_t NumRemoteDevices = getNumRemoteDevices();
+    assert(RemoteDevices.size() == 0 && "MPI Plugin already initialized");
+    RemoteDevices.resize(NumRemoteDevices, nullptr);
+    return NumRemoteDevices;
   }
 
   /// Deinitialize the plugin.
@@ -435,7 +438,10 @@ struct MPIPluginTy : public GenericPluginTy {
   }
 
   /// All images (ELF-compatible) should be compatible with this plugin.
-  Expected<bool> isELFCompatible(StringRef) const override { return true; }
+  Expected<bool> isELFCompatible(uint32_t DeviceID,
+                                 StringRef Image) const override {
+    return true;
+  }
 
   Triple::ArchType getTripleArch() const override {
 #if defined(__x86_64__)
@@ -546,18 +552,20 @@ struct MPIPluginTy : public GenericPluginTy {
     return NumRemoteDevices;
   }
 
-  int32_t is_valid_binary(__tgt_device_image *Image,
-                          bool Initialized = true) override {
+  int32_t is_plugin_compatible(__tgt_device_image *Image) override {
+    if (!EventSystem.is_initialized())
+      EventSystem.initialize();
+
     int NumRanks = EventSystem.getNumWorkers();
     llvm::SmallVector<bool> QueryResults{};
     bool QueryResult = true;
     for (int RemoteRank = 0; RemoteRank < NumRanks; RemoteRank++) {
       EventTy Event = EventSystem.createEvent(
-          OriginEvents::isValidBinary, EventTypeTy::IS_VALID_BINARY, RemoteRank,
-          Image, Initialized, &QueryResults.emplace_back(false));
+          OriginEvents::isPluginCompatible, EventTypeTy::IS_PLUGIN_COMPATIBLE,
+          RemoteRank, Image, &QueryResults.emplace_back(false));
 
       if (Event.empty()) {
-        DP("Failed to create isValidBinary on Rank %d\n", RemoteRank);
+        DP("Failed to create isPluginCompatible on Rank %d\n", RemoteRank);
         QueryResults[RemoteRank] = false;
       }
 
@@ -573,9 +581,36 @@ struct MPIPluginTy : public GenericPluginTy {
     return QueryResult;
   }
 
+  int32_t is_device_compatible(int32_t DeviceId,
+                               __tgt_device_image *Image) override {
+    bool QueryResult = true;
+
+    EventTy Event = EventSystem.createEvent(OriginEvents::isDeviceCompatible,
+                                            EventTypeTy::IS_DEVICE_COMPATIBLE,
+                                            DeviceId, Image, &QueryResult);
+
+    if (Event.empty()) {
+      DP("Failed to create isDeviceCompatible on Device %d\n", DeviceId);
+    }
+
+    Event.wait();
+    if (auto Err = Event.getError()) {
+      DP("Error querying the binary compability on Device %d\n", DeviceId);
+    }
+
+    return QueryResult;
+  }
+
+  int32_t is_device_initialized(int32_t DeviceId) const override {
+    return isValidDeviceId(DeviceId) && RemoteDevices[DeviceId] != nullptr;
+  }
+
   int32_t init_device(int32_t DeviceId) override {
-    EventTy Event = EventSystem.createEvent(OriginEvents::initDevice,
-                                            EventTypeTy::INIT_DEVICE, DeviceId);
+    void *DevicePtr = nullptr;
+
+    EventTy Event =
+        EventSystem.createEvent(OriginEvents::initDevice,
+                                EventTypeTy::INIT_DEVICE, DeviceId, &DevicePtr);
 
     if (Event.empty()) {
       REPORT("Error to create InitDevice Event for device %d\n", DeviceId);
@@ -589,6 +624,8 @@ struct MPIPluginTy : public GenericPluginTy {
              toString(std::move(Error)).data());
       return 0;
     }
+
+    RemoteDevices[DeviceId] = DevicePtr;
 
     return OFFLOAD_SUCCESS;
   }
@@ -832,9 +869,10 @@ struct MPIPluginTy : public GenericPluginTy {
     }
 
     // Copy HstData to a buffer with event-managed lifetime.
-    void *SubmitBuffer = std::malloc(Size);
+    memAllocHost(Size);
+    void *SubmitBuffer = memAllocHost(Size);
     std::memcpy(SubmitBuffer, HstPtr, Size);
-    EventDataHandleTy DataHandle(SubmitBuffer, &std::free);
+    EventDataHandleTy DataHandle(SubmitBuffer, &memFreeHost);
 
     EventTy Event = EventSystem.createEvent(
         OriginEvents::submit, EventTypeTy::SUBMIT, DeviceId, TgtPtr, DataHandle,
@@ -928,17 +966,17 @@ struct MPIPluginTy : public GenericPluginTy {
 
     uint32_t NumArgs = KernelArgs->NumArgs;
 
-    void *Args = std::malloc(sizeof(void *) * NumArgs);
+    void *Args = memAllocHost(sizeof(void *) * NumArgs);
     std::memcpy(Args, TgtArgs, sizeof(void *) * NumArgs);
-    EventDataHandleTy ArgsHandle(Args, &std::free);
+    EventDataHandleTy ArgsHandle(Args, &memFreeHost);
 
-    void *Offsets = std::malloc(sizeof(ptrdiff_t) * NumArgs);
+    void *Offsets = memAllocHost(sizeof(ptrdiff_t) * NumArgs);
     std::memcpy(Offsets, TgtOffsets, sizeof(ptrdiff_t) * NumArgs);
-    EventDataHandleTy OffsetsHandle(Offsets, &std::free);
+    EventDataHandleTy OffsetsHandle(Offsets, &memFreeHost);
 
-    void *KernelArgsPtr = std::malloc(sizeof(KernelArgsTy));
+    void *KernelArgsPtr = memAllocHost(sizeof(KernelArgsTy));
     std::memcpy(KernelArgsPtr, KernelArgs, sizeof(KernelArgsTy));
-    EventDataHandleTy KernelArgsHandle(KernelArgsPtr, &free);
+    EventDataHandleTy KernelArgsHandle(KernelArgsPtr, &memFreeHost);
 
     EventTy Event = EventSystem.createEvent(
         OriginEvents::launchKernel, EventTypeTy::LAUNCH_KERNEL, DeviceId,
@@ -989,12 +1027,6 @@ struct MPIPluginTy : public GenericPluginTy {
              toString(std::move(Error)).c_str());
       return OFFLOAD_FAIL;
     }
-
-    // FIXME: Since operations on remote devices are asynchronous, we need to
-    // wait for a certain period to complete operations, such as printing on
-    // stdout in the remote process, to ensure the order of such operations
-    // between the host and devices.
-    // std::this_thread::sleep_for(std::chrono::milliseconds(100));
 
     return OFFLOAD_SUCCESS;
   }
@@ -1251,6 +1283,7 @@ struct MPIPluginTy : public GenericPluginTy {
 private:
   std::mutex MPIQueueMutex;
   llvm::DenseMap<uintptr_t, int32_t> DeviceImgPtrToDeviceId;
+  llvm::SmallVector<void *> RemoteDevices;
   EventSystemTy EventSystem;
 };
 

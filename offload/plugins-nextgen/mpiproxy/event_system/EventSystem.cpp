@@ -184,22 +184,31 @@ EventTy retrieveNumDevices(MPIRequestManagerTy RequestManager,
   co_return (co_await RequestManager);
 }
 
-EventTy isValidBinary(MPIRequestManagerTy RequestManager,
-                      __tgt_device_image *Image, bool Initialized,
-                      bool *QueryResult) {
+EventTy isPluginCompatible(MPIRequestManagerTy RequestManager,
+                           __tgt_device_image *Image, bool *QueryResult) {
   uint64_t Size =
       llvm::omp::target::getPtrDiff(Image->ImageEnd, Image->ImageStart);
 
   RequestManager.send(&Size, 1, MPI_UINT64_T);
   RequestManager.send(Image->ImageStart, Size, MPI_BYTE);
-  RequestManager.send(&Initialized, sizeof(bool), MPI_BYTE);
   RequestManager.receive(QueryResult, sizeof(bool), MPI_BYTE);
   co_return (co_await RequestManager);
 }
 
-EventTy initDevice(MPIRequestManagerTy RequestManager) {
+EventTy isDeviceCompatible(MPIRequestManagerTy RequestManager,
+                           __tgt_device_image *Image, bool *QueryResult) {
+  uint64_t Size =
+      llvm::omp::target::getPtrDiff(Image->ImageEnd, Image->ImageStart);
+
+  RequestManager.send(&Size, 1, MPI_UINT64_T);
+  RequestManager.send(Image->ImageStart, Size, MPI_BYTE);
+  RequestManager.receive(QueryResult, sizeof(bool), MPI_BYTE);
+  co_return (co_await RequestManager);
+}
+
+EventTy initDevice(MPIRequestManagerTy RequestManager, void **DevicePtr) {
   // Wait the complete notification
-  RequestManager.receive(nullptr, 0, MPI_BYTE);
+  RequestManager.receive(DevicePtr, sizeof(void *), MPI_BYTE);
   co_return (co_await RequestManager);
 }
 
@@ -542,6 +551,10 @@ bool EventSystemTy::initialize() {
   EventSystemState = EventSystemStateTy::INITIALIZED;
 
   return true;
+}
+
+bool EventSystemTy::is_initialized() {
+  return EventSystemState == EventSystemStateTy::INITIALIZED;
 }
 
 bool EventSystemTy::deinitialize() {

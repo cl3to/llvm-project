@@ -60,12 +60,15 @@ enum class EventTypeTy : unsigned int {
   RETRIEVE_NUM_DEVICES, // Receives the number of devices from a remote process.
   INIT_DEVICE,          // Init Remote device
   INIT_RECORD_REPLAY,   // Initializes the record and replay mechanism.
-  IS_VALID_BINARY, // Check if the Image can be executed by the remote process.
-  IS_DATA_EXCHANGABLE, // Check if the plugin supports exchanging data.
-  LOAD_BINARY,         // Transmits the binary descriptor to all workers
-  GET_GLOBAL,          // Look up a global symbol in the given binary
-  GET_FUNCTION,        // Look up a kernel function in the given binary.
-  SYNCHRONIZE,         // Sync all events in the device.
+  IS_PLUGIN_COMPATIBLE, // Check if the Image can be executed by the remote
+                        // plugin.
+  IS_DEVICE_COMPATIBLE, // Check if the Image can be executed by a device in the
+                        // remote plugin.
+  IS_DATA_EXCHANGABLE,  // Check if the plugin supports exchanging data.
+  LOAD_BINARY,          // Transmits the binary descriptor to all workers
+  GET_GLOBAL,           // Look up a global symbol in the given binary
+  GET_FUNCTION,         // Look up a kernel function in the given binary.
+  SYNCHRONIZE,          // Sync all events in the device.
   INIT_ASYNC_INFO,
   INIT_DEVICE_INFO,
   QUERY_ASYNC,
@@ -301,10 +304,11 @@ namespace OriginEvents {
 
 EventTy retrieveNumDevices(MPIRequestManagerTy RequestManager,
                            int32_t *NumDevices);
-EventTy isValidBinary(MPIRequestManagerTy RequestManager,
-                      __tgt_device_image *Image, bool Initialized,
-                      bool *QueryResult);
-EventTy initDevice(MPIRequestManagerTy RequestManager);
+EventTy isPluginCompatible(MPIRequestManagerTy RequestManager,
+                           __tgt_device_image *Image, bool *QueryResult);
+EventTy isDeviceCompatible(MPIRequestManagerTy RequestManager,
+                           __tgt_device_image *Image, bool *QueryResult);
+EventTy initDevice(MPIRequestManagerTy RequestManager, void **DevicePtr);
 EventTy initRecordReplay(MPIRequestManagerTy RequestManager, int64_t MemorySize,
                          void *VAddr, bool IsRecord, bool SaveOutput,
                          uint64_t *ReqPtrArgOffset);
@@ -473,6 +477,7 @@ public:
   ~EventSystemTy();
 
   bool initialize();
+  bool is_initialized();
   bool deinitialize();
 
   /// Creates a new event.
@@ -525,7 +530,8 @@ EventTy EventSystemTy::createEvent(EventFuncTy EventFunc, EventTypeTy EventType,
 
   int32_t RemoteRank = DstDeviceID, RemoteDeviceId = -1;
 
-  if (EventType != EventTypeTy::RETRIEVE_NUM_DEVICES &&
+  if (EventType != EventTypeTy::IS_PLUGIN_COMPATIBLE &&
+      EventType != EventTypeTy::RETRIEVE_NUM_DEVICES &&
       EventType != EventTypeTy::EXIT)
     std::tie(RemoteRank, RemoteDeviceId) = mapDeviceId(DstDeviceID);
 
