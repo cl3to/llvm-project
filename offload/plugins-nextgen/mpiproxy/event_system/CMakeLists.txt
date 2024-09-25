@@ -14,12 +14,6 @@ target_link_libraries(EventSystem PRIVATE
   LLVMSupport
 )
 
-if(FFI_STATIC_LIBRARIES)
-  target_link_libraries(EventSystem PRIVATE FFI::ffi_static)
-else()
-  target_link_libraries(EventSystem PRIVATE FFI::ffi)
-endif()
-
 target_compile_options(EventSystem PUBLIC ${offload_compile_flags})
 target_link_options(EventSystem PUBLIC ${offload_link_flags})
 
