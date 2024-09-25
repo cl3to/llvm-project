@@ -23,7 +23,6 @@
 #include <functional>
 #include <memory>
 
-#include <ffi.h>
 #include <mpi.h>
 #include <unistd.h>
 
@@ -189,8 +188,14 @@ EventTy isPluginCompatible(MPIRequestManagerTy RequestManager,
   uint64_t Size =
       llvm::omp::target::getPtrDiff(Image->ImageEnd, Image->ImageStart);
 
+  void *Buffer = memAllocHost(Size);
+  if (Buffer != nullptr)
+    memcpy(Buffer, Image->ImageStart, Size);
+  else
+    Buffer = Image->ImageStart;
+
   RequestManager.send(&Size, 1, MPI_UINT64_T);
-  RequestManager.send(Image->ImageStart, Size, MPI_BYTE);
+  RequestManager.send(Buffer, Size, MPI_BYTE);
   RequestManager.receive(QueryResult, sizeof(bool), MPI_BYTE);
   co_return (co_await RequestManager);
 }
@@ -200,8 +205,14 @@ EventTy isDeviceCompatible(MPIRequestManagerTy RequestManager,
   uint64_t Size =
       llvm::omp::target::getPtrDiff(Image->ImageEnd, Image->ImageStart);
 
+  void *Buffer = memAllocHost(Size);
+  if (Buffer != nullptr)
+    memcpy(Buffer, Image->ImageStart, Size);
+  else
+    Buffer = Image->ImageStart;
+
   RequestManager.send(&Size, 1, MPI_UINT64_T);
-  RequestManager.send(Image->ImageStart, Size, MPI_BYTE);
+  RequestManager.send(Buffer, Size, MPI_BYTE);
   RequestManager.receive(QueryResult, sizeof(bool), MPI_BYTE);
   co_return (co_await RequestManager);
 }

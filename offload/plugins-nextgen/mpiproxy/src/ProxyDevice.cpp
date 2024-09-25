@@ -852,6 +852,7 @@ struct ProxyDevice {
 
       if (!Event.done()) {
         Queue.push(std::move(Event));
+        continue;
       }
 
       auto Error = Event.getError();
