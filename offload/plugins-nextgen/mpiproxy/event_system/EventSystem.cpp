@@ -414,8 +414,14 @@ EventTy loadBinary(MPIRequestManagerTy RequestManager,
   RequestManager.send(&EntryCount, 1, MPI_UINT64_T);
   RequestManager.send(EntryNameSizes.begin(), EntryCount, MPI_UINT64_T);
 
+  void *Buffer = memAllocHost(ImageSize);
+  if (Buffer != nullptr)
+    memcpy(Buffer, ImageStart, ImageSize);
+  else
+    Buffer = ImageStart;
+
   // Send the image bytes and the table entries.
-  RequestManager.send(ImageStart, ImageSize, MPI_BYTE);
+  RequestManager.send(Buffer, ImageSize, MPI_BYTE);
 
   for (size_t I = 0; I < EntryCount; I++) {
     RequestManager.send(&EntriesBegin[I].addr, 1, MPI_UINT64_T);
