@@ -196,6 +196,13 @@ EventTy isPluginCompatible(MPIRequestManagerTy RequestManager,
 
   RequestManager.send(&Size, 1, MPI_UINT64_T);
   RequestManager.send(Buffer, Size, MPI_BYTE);
+
+  if (auto Err = co_await RequestManager; Err)
+    co_return Err;
+
+  if (Buffer != Image->ImageStart)
+    memFreeHost(Buffer);
+
   RequestManager.receive(QueryResult, sizeof(bool), MPI_BYTE);
   co_return (co_await RequestManager);
 }
@@ -213,6 +220,13 @@ EventTy isDeviceCompatible(MPIRequestManagerTy RequestManager,
 
   RequestManager.send(&Size, 1, MPI_UINT64_T);
   RequestManager.send(Buffer, Size, MPI_BYTE);
+
+  if (auto Err = co_await RequestManager; Err)
+    co_return Err;
+
+  if (Buffer != Image->ImageStart)
+    memFreeHost(Buffer);
+
   RequestManager.receive(QueryResult, sizeof(bool), MPI_BYTE);
   co_return (co_await RequestManager);
 }
@@ -430,6 +444,12 @@ EventTy loadBinary(MPIRequestManagerTy RequestManager,
     RequestManager.send(&EntriesBegin[I].flags, 1, MPI_INT32_T);
     RequestManager.send(&EntriesBegin[I].data, 1, MPI_INT32_T);
   }
+
+  if (auto Err = co_await RequestManager; Err)
+    co_return Err;
+
+  if (Buffer != ImageStart)
+    memFreeHost(Buffer);
 
   RequestManager.receive(&Binary->handle, sizeof(void *), MPI_BYTE);
 
