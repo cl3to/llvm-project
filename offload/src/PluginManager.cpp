@@ -98,6 +98,13 @@ void PluginManager::registerLib(__tgt_bin_desc *Desc) {
       if (!R.is_plugin_compatible(Img))
         continue;
 
+      // Disable Host Plugin when it is needed
+      if (char *EnvStr = getenv("LIBOMPTARGET_DISABLE_HOST_PLUGIN")) {
+        uint32_t DisableHost = std::stoi(EnvStr);
+        if (!strcmp(R.getName(), "x86_64") && DisableHost)
+          continue;
+      }
+
       if (!R.is_initialized()) {
         if (auto Err = R.init()) {
           [[maybe_unused]] std::string InfoMsg = toString(std::move(Err));
