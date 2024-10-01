@@ -65,6 +65,13 @@ bool PluginManager::initializePlugin(GenericPluginTy &Plugin) {
   if (Plugin.is_initialized())
     return true;
 
+  // Disable Host Plugin when it is needed
+  if (char *EnvStr = getenv("LIBOMPTARGET_DISABLE_HOST_PLUGIN")) {
+    uint32_t DisableHost = std::stoi(EnvStr);
+    if (!strcmp(R.getName(), "x86_64") && DisableHost)
+      continue;
+  }
+
   if (auto Err = Plugin.init()) {
     [[maybe_unused]] std::string InfoMsg = toString(std::move(Err));
     DP("Failed to init plugin: %s\n", InfoMsg.c_str());
