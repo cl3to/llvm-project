@@ -1303,7 +1303,7 @@ static Error Plugin::check(int32_t ErrorCode, const char *ErrFmt,
 } // namespace llvm::omp::target::plugin
 
 extern "C" {
-llvm::omp::target::plugin::GenericPluginTy *createPlugin_mpiproxy() {
+llvm::omp::target::plugin::GenericPluginTy *createPlugin_mpi() {
   return new llvm::omp::target::plugin::MPIPluginTy();
 }
 }
