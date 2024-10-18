@@ -12,6 +12,7 @@
 
 #include "PluginManager.h"
 #include "Shared/Debug.h"
+#include "Shared/EnvironmentVar.h"
 #include "Shared/Profile.h"
 #include "device.h"
 
@@ -66,10 +67,9 @@ bool PluginManager::initializePlugin(GenericPluginTy &Plugin) {
     return true;
 
   // Disable Host Plugin when it is needed
-  if (char *EnvStr = getenv("LIBOMPTARGET_DISABLE_HOST_PLUGIN")) {
-    uint32_t DisableHost = std::stoi(EnvStr);
-    if (!strcmp(R.getName(), "x86_64") && DisableHost)
-      continue;
+  IntEnvar DisableHostPlugin("OMPTARGET_DISABLE_HOST_PLUGIN", 0);
+  if (DisableHostPlugin.get() && !strcmp(Plugin.getName(), "x86_64")) {
+    return false;
   }
 
   if (auto Err = Plugin.init()) {
