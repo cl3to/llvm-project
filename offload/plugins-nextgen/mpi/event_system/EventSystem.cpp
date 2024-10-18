@@ -160,11 +160,11 @@ EventTy operator co_await(MPIRequestManagerTy &RequestManager) {
 }
 
 void *memAllocHost(int64_t Size) {
-  void *HstPrt = nullptr;
-  int MPIError = MPI_Alloc_mem(Size, MPI_INFO_NULL, &HstPrt);
+  void *HstPtr = nullptr;
+  int MPIError = MPI_Alloc_mem(Size, MPI_INFO_NULL, &HstPtr);
   if (MPIError != MPI_SUCCESS)
     return nullptr;
-  return HstPrt;
+  return HstPtr;
 }
 
 int memFreeHost(void *HstPtr) {
@@ -185,8 +185,7 @@ EventTy retrieveNumDevices(MPIRequestManagerTy RequestManager,
 
 EventTy isPluginCompatible(MPIRequestManagerTy RequestManager,
                            __tgt_device_image *Image, bool *QueryResult) {
-  uint64_t Size =
-      utils::getPtrDiff(Image->ImageEnd, Image->ImageStart);
+  uint64_t Size = utils::getPtrDiff(Image->ImageEnd, Image->ImageStart);
 
   void *Buffer = memAllocHost(Size);
   if (Buffer != nullptr)
@@ -209,8 +208,7 @@ EventTy isPluginCompatible(MPIRequestManagerTy RequestManager,
 
 EventTy isDeviceCompatible(MPIRequestManagerTy RequestManager,
                            __tgt_device_image *Image, bool *QueryResult) {
-  uint64_t Size =
-      utils::getPtrDiff(Image->ImageEnd, Image->ImageStart);
+  uint64_t Size = utils::getPtrDiff(Image->ImageEnd, Image->ImageStart);
 
   void *Buffer = memAllocHost(Size);
   if (Buffer != nullptr)

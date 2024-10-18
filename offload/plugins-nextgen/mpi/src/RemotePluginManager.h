@@ -78,9 +78,7 @@ struct DeviceImage : __tgt_device_image {
   }
 
   /// Get the image size.
-  size_t getSize() const {
-    return utils::getPtrDiff(ImageEnd, ImageStart);
-  }
+  size_t getSize() const { return utils::getPtrDiff(ImageEnd, ImageStart); }
 
   /// Getter and setter for the dynamic library.
   DynamicLibrary &getDynamicLibrary() { return DynLib; }
