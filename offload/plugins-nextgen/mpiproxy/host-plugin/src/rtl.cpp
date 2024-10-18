@@ -140,7 +140,8 @@ struct MPIKernelTy : public GenericKernelTy {
 
   /// Launch the kernel.
   Error launchImpl(GenericDeviceTy &GenericDevice, uint32_t NumThreads,
-                   uint64_t NumBlocks, KernelArgsTy &KernelArgs, void *Args,
+                   uint64_t NumBlocks, KernelArgsTy &KernelArgs,
+                   KernelLaunchParamsTy LaunchParams,
                    AsyncInfoWrapperTy &AsyncInfoWrapper) const override;
 
 private:
@@ -392,7 +393,8 @@ private:
 
 Error MPIKernelTy::launchImpl(GenericDeviceTy &GenericDevice,
                               uint32_t NumThreads, uint64_t NumBlocks,
-                              KernelArgsTy &KernelArgs, void *Args,
+                              KernelArgsTy &KernelArgs,
+                              KernelLaunchParamsTy LaunchParams,
                               AsyncInfoWrapperTy &AsyncInfoWrapper) const {
   return Plugin::success();
 }

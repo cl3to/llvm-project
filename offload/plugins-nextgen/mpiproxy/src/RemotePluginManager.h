@@ -16,6 +16,7 @@
 
 #include "PluginInterface.h"
 #include "Shared/APITypes.h"
+#include "Shared/Utils.h"
 
 #include "llvm/ADT/DenseSet.h"
 #include "llvm/ADT/SmallVector.h"
@@ -78,7 +79,7 @@ struct DeviceImage : __tgt_device_image {
 
   /// Get the image size.
   size_t getSize() const {
-    return llvm::omp::target::getPtrDiff(ImageEnd, ImageStart);
+    return utils::getPtrDiff(ImageEnd, ImageStart);
   }
 
   /// Getter and setter for the dynamic library.

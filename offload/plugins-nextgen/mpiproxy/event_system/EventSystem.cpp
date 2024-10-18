@@ -186,7 +186,7 @@ EventTy retrieveNumDevices(MPIRequestManagerTy RequestManager,
 EventTy isPluginCompatible(MPIRequestManagerTy RequestManager,
                            __tgt_device_image *Image, bool *QueryResult) {
   uint64_t Size =
-      llvm::omp::target::getPtrDiff(Image->ImageEnd, Image->ImageStart);
+      utils::getPtrDiff(Image->ImageEnd, Image->ImageStart);
 
   void *Buffer = memAllocHost(Size);
   if (Buffer != nullptr)
@@ -210,7 +210,7 @@ EventTy isPluginCompatible(MPIRequestManagerTy RequestManager,
 EventTy isDeviceCompatible(MPIRequestManagerTy RequestManager,
                            __tgt_device_image *Image, bool *QueryResult) {
   uint64_t Size =
-      llvm::omp::target::getPtrDiff(Image->ImageEnd, Image->ImageStart);
+      utils::getPtrDiff(Image->ImageEnd, Image->ImageStart);
 
   void *Buffer = memAllocHost(Size);
   if (Buffer != nullptr)
