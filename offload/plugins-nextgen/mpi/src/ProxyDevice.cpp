@@ -23,6 +23,28 @@
 extern void llvm::omp::target::ompt::connectLibrary();
 #endif
 
+/// Class that holds a stage pointer for data transfer between host and remote
+/// device (RAII)
+struct PluginDataHandle {
+  void *HstPtr;
+  uint32_t Plugin;
+  uint32_t Device;
+  RemotePluginManager *PM;
+  PluginDataHandle(RemotePluginManager *PluginManager, uint32_t PluginId,
+                   uint32_t DeviceId, uint64_t Size) {
+    Device = DeviceId;
+    Plugin = PluginId;
+    PM = PluginManager;
+    HstPtr = PM->Plugins[Plugin]->data_alloc(Device, Size, nullptr,
+                                             TARGET_ALLOC_HOST);
+    // HstPtr = malloc(Size);
+  }
+  ~PluginDataHandle() {
+    PM->Plugins[Plugin]->data_delete(Device, HstPtr, TARGET_ALLOC_HOST);
+    // free(HstPtr);
+  }
+};
+
 /// Event Implementations on Device side.
 struct ProxyDevice {
   ProxyDevice()
@@ -294,20 +316,19 @@ struct ProxyDevice {
     if (auto Error = co_await RequestManager; Error)
       co_return Error;
 
-    void *HstPtr = memAllocHost(Size);
-    RequestManager.receiveInBatchs(HstPtr, Size);
-
-    if (auto Error = co_await RequestManager; Error)
-      co_return Error;
-
-    EventDataHandleTy DataHandle(HstPtr, &memFreeHost);
     int32_t PluginId, DeviceId;
 
     std::tie(PluginId, DeviceId) =
         EventSystem.mapDeviceId(RequestManager.DeviceId);
 
+    PluginDataHandle DataHandler(&PluginManager, PluginId, DeviceId, Size);
+    RequestManager.receiveInBatchs(DataHandler.HstPtr, Size);
+
+    if (auto Error = co_await RequestManager; Error)
+      co_return Error;
+
     PluginManager.Plugins[PluginId]->data_submit_async(
-        DeviceId, TgtPtr, DataHandle.get(), Size, TgtAsyncInfo);
+        DeviceId, TgtPtr, DataHandler.HstPtr, Size, TgtAsyncInfo);
 
     // Event completion notification
     RequestManager.send(nullptr, 0, MPI_BYTE);
@@ -331,22 +352,23 @@ struct ProxyDevice {
     if (auto Error = co_await RequestManager; Error)
       co_return Error;
 
-    void *HstPtr = memAllocHost(Size);
-    EventDataHandleTy DataHandle(HstPtr, &memFreeHost);
     int32_t PluginId, DeviceId;
 
     std::tie(PluginId, DeviceId) =
         EventSystem.mapDeviceId(RequestManager.DeviceId);
 
+    PluginDataHandle DataHandler(&PluginManager, PluginId, DeviceId, Size);
+    RequestManager.receiveInBatchs(DataHandler.HstPtr, Size);
+
     PluginManager.Plugins[PluginId]->data_retrieve_async(
-        DeviceId, DataHandle.get(), TgtPtr, Size, TgtAsyncInfo);
+        DeviceId, DataHandler.HstPtr, TgtPtr, Size, TgtAsyncInfo);
 
     if (auto Error =
             co_await waitAsyncOpEnd(PluginId, DeviceId, HstAsyncInfoPtr);
         Error)
       co_return Error;
 
-    RequestManager.sendInBatchs(DataHandle.get(), Size);
+    RequestManager.sendInBatchs(DataHandler.HstPtr, Size);
 
     // Event completion notification
     RequestManager.send(nullptr, 0, MPI_BYTE);
@@ -402,15 +424,15 @@ struct ProxyDevice {
 
     auto *TgtAsyncInfo = MapAsyncInfo(HstAsyncInfoPtr);
 
-    void *HstPtr = memAllocHost(Size);
-
     int32_t PluginId, DeviceId;
 
     std::tie(PluginId, DeviceId) =
         EventSystem.mapDeviceId(RequestManager.DeviceId);
 
+    PluginDataHandle DataHandler(&PluginManager, PluginId, DeviceId, Size);
+
     PluginManager.Plugins[PluginId]->data_retrieve_async(
-        DeviceId, HstPtr, SrcBuffer, Size, TgtAsyncInfo);
+        DeviceId, DataHandler.HstPtr, SrcBuffer, Size, TgtAsyncInfo);
 
     if (auto Error =
             co_await waitAsyncOpEnd(PluginId, DeviceId, HstAsyncInfoPtr);
@@ -421,7 +443,7 @@ struct ProxyDevice {
     RequestManager.OtherRank = DstRank;
 
     // Send buffer to target device
-    RequestManager.sendInBatchs(HstPtr, Size);
+    RequestManager.sendInBatchs(DataHandler.HstPtr, Size);
 
     if (auto Error = co_await RequestManager; Error)
       co_return Error;
@@ -432,32 +454,19 @@ struct ProxyDevice {
     // Event completion notification
     RequestManager.send(nullptr, 0, MPI_BYTE);
 
-    memFreeHost(HstPtr);
     co_return (co_await RequestManager);
   }
 
   EventTy exchangeDst(MPIRequestManagerTy RequestManager) {
     void *DstBuffer, *HstAsyncInfoPtr = nullptr;
     int64_t Size;
-    int SrcRank;
     // Save head node rank
-    int HeadNodeRank = RequestManager.OtherRank;
+    int SrcRank, HeadNodeRank = RequestManager.OtherRank;
 
     RequestManager.receive(&DstBuffer, sizeof(void *), MPI_BYTE);
     RequestManager.receive(&Size, 1, MPI_INT64_T);
     RequestManager.receive(&SrcRank, 1, MPI_INT);
     RequestManager.receive(&HstAsyncInfoPtr, sizeof(void *), MPI_BYTE);
-
-    if (auto Error = co_await RequestManager; Error)
-      co_return Error;
-
-    void *HstPtr = memAllocHost(Size);
-
-    // Set the Source Rank in RequestManager
-    RequestManager.OtherRank = SrcRank;
-
-    // Receive buffer from the Source device
-    RequestManager.receiveInBatchs(HstPtr, Size);
 
     if (auto Error = co_await RequestManager; Error)
       co_return Error;
@@ -469,8 +478,19 @@ struct ProxyDevice {
     std::tie(PluginId, DeviceId) =
         EventSystem.mapDeviceId(RequestManager.DeviceId);
 
+    PluginDataHandle DataHandler(&PluginManager, PluginId, DeviceId, Size);
+
+    // Set the Source Rank in RequestManager
+    RequestManager.OtherRank = SrcRank;
+
+    // Receive buffer from the Source device
+    RequestManager.receiveInBatchs(DataHandler.HstPtr, Size);
+
+    if (auto Error = co_await RequestManager; Error)
+      co_return Error;
+
     PluginManager.Plugins[PluginId]->data_submit_async(
-        DeviceId, DstBuffer, HstPtr, Size, TgtAsyncInfo);
+        DeviceId, DstBuffer, DataHandler.HstPtr, Size, TgtAsyncInfo);
 
     if (auto Error =
             co_await waitAsyncOpEnd(PluginId, DeviceId, HstAsyncInfoPtr);
@@ -482,8 +502,6 @@ struct ProxyDevice {
 
     // Event completion notification
     RequestManager.send(nullptr, 0, MPI_BYTE);
-
-    memFreeHost(HstPtr);
 
     co_return (co_await RequestManager);
   }
