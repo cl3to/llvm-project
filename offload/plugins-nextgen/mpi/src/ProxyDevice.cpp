@@ -37,11 +37,9 @@ struct PluginDataHandle {
     PM = PluginManager;
     HstPtr = PM->Plugins[Plugin]->data_alloc(Device, Size, nullptr,
                                              TARGET_ALLOC_HOST);
-    // HstPtr = malloc(Size);
   }
   ~PluginDataHandle() {
     PM->Plugins[Plugin]->data_delete(Device, HstPtr, TARGET_ALLOC_HOST);
-    // free(HstPtr);
   }
 };
 
@@ -358,7 +356,6 @@ struct ProxyDevice {
         EventSystem.mapDeviceId(RequestManager.DeviceId);
 
     PluginDataHandle DataHandler(&PluginManager, PluginId, DeviceId, Size);
-    RequestManager.receiveInBatchs(DataHandler.HstPtr, Size);
 
     PluginManager.Plugins[PluginId]->data_retrieve_async(
         DeviceId, DataHandler.HstPtr, TgtPtr, Size, TgtAsyncInfo);
