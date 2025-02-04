@@ -1257,6 +1257,8 @@ public:
   /// Notify t he runtime about a mapping that has been deleted.
   virtual int32_t data_notify_unmapped(int32_t DeviceId, void *HstPtr);
 
+  virtual int32_t data_bcast(void *HstPtr, int64_t Size, void **TgtPtrs);
+
   /// Copy data to the given device.
   virtual int32_t data_submit(int32_t DeviceId, void *TgtPtr, void *HstPtr,
                               int64_t Size);

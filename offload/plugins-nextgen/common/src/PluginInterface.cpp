@@ -1915,6 +1915,12 @@ int32_t GenericPluginTy::data_notify_unmapped(int32_t DeviceId, void *HstPtr) {
   return OFFLOAD_SUCCESS;
 }
 
+// Only works in MPI plugin
+int32_t GenericPluginTy::data_bcast(void *HstPtr, int64_t Size,
+                                    void **TgtPtrs) {
+  return OFFLOAD_FAIL;
+}
+
 int32_t GenericPluginTy::data_submit(int32_t DeviceId, void *TgtPtr,
                                      void *HstPtr, int64_t Size) {
   return data_submit_async(DeviceId, TgtPtr, HstPtr, Size,

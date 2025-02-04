@@ -77,6 +77,12 @@ struct DeviceTy {
   /// allocator should be used (host, shared, device).
   int32_t deleteData(void *TgtPtrBegin, int32_t Kind = TARGET_ALLOC_DEFAULT);
 
+  /// Broadcast \p HstPtr data at \p Size to all devices
+  /// OFFLOAD_SUCCESS/OFFLOAD_FAIL when succeeds/fails.
+  /// \p TgtPtrs will be filled with the correct allocated tgt ptrs
+  /// following the default device order
+  int32_t bcastData(void *HstPtr, int64_t Size, void **TgtPtrs);
+
   // Data transfer. When AsyncInfo is nullptr, the transfer will be
   // synchronous.
   // Copy data from host to device

@@ -44,35 +44,64 @@
 
 std::string EventTypeToString(EventTypeTy eventType) {
   switch (eventType) {
-    case EventTypeTy::RETRIEVE_NUM_DEVICES: return "RETRIEVE_NUM_DEVICES";
-    case EventTypeTy::INIT_DEVICE: return "INIT_DEVICE";
-    case EventTypeTy::INIT_RECORD_REPLAY: return "INIT_RECORD_REPLAY";
-    case EventTypeTy::IS_PLUGIN_COMPATIBLE: return "IS_PLUGIN_COMPATIBLE";
-    case EventTypeTy::IS_DEVICE_COMPATIBLE: return "IS_DEVICE_COMPATIBLE";
-    case EventTypeTy::IS_DATA_EXCHANGABLE: return "IS_DATA_EXCHANGABLE";
-    case EventTypeTy::LOAD_BINARY: return "LOAD_BINARY";
-    case EventTypeTy::GET_GLOBAL: return "GET_GLOBAL";
-    case EventTypeTy::GET_FUNCTION: return "GET_FUNCTION";
-    case EventTypeTy::SYNCHRONIZE: return "SYNCHRONIZE";
-    case EventTypeTy::INIT_ASYNC_INFO: return "INIT_ASYNC_INFO";
-    case EventTypeTy::INIT_DEVICE_INFO: return "INIT_DEVICE_INFO";
-    case EventTypeTy::QUERY_ASYNC: return "QUERY_ASYNC";
-    case EventTypeTy::PRINT_DEVICE_INFO: return "PRINT_DEVICE_INFO";
-    case EventTypeTy::DATA_LOCK: return "DATA_LOCK";
-    case EventTypeTy::DATA_UNLOCK: return "DATA_UNLOCK";
-    case EventTypeTy::DATA_NOTIFY_MAPPED: return "DATA_NOTIFY_MAPPED";
-    case EventTypeTy::DATA_NOTIFY_UNMAPPED: return "DATA_NOTIFY_UNMAPPED";
-    case EventTypeTy::ALLOC: return "ALLOC";
-    case EventTypeTy::DELETE: return "DELETE";
-    case EventTypeTy::SUBMIT: return "SUBMIT";
-    case EventTypeTy::RETRIEVE: return "RETRIEVE";
-    case EventTypeTy::LOCAL_EXCHANGE: return "LOCAL_EXCHANGE";
-    case EventTypeTy::EXCHANGE_SRC: return "EXCHANGE_SRC";
-    case EventTypeTy::EXCHANGE_DST: return "EXCHANGE_DST";
-    case EventTypeTy::LAUNCH_KERNEL: return "LAUNCH_KERNEL";
-    case EventTypeTy::SYNC: return "SYNC";
-    case EventTypeTy::EXIT: return "EXIT";
-    default: return "UNKNOWN_EVENT_TYPE";
+  case EventTypeTy::RETRIEVE_NUM_DEVICES:
+    return "RETRIEVE_NUM_DEVICES";
+  case EventTypeTy::INIT_DEVICE:
+    return "INIT_DEVICE";
+  case EventTypeTy::INIT_RECORD_REPLAY:
+    return "INIT_RECORD_REPLAY";
+  case EventTypeTy::IS_PLUGIN_COMPATIBLE:
+    return "IS_PLUGIN_COMPATIBLE";
+  case EventTypeTy::IS_DEVICE_COMPATIBLE:
+    return "IS_DEVICE_COMPATIBLE";
+  case EventTypeTy::IS_DATA_EXCHANGABLE:
+    return "IS_DATA_EXCHANGABLE";
+  case EventTypeTy::LOAD_BINARY:
+    return "LOAD_BINARY";
+  case EventTypeTy::GET_GLOBAL:
+    return "GET_GLOBAL";
+  case EventTypeTy::GET_FUNCTION:
+    return "GET_FUNCTION";
+  case EventTypeTy::SYNCHRONIZE:
+    return "SYNCHRONIZE";
+  case EventTypeTy::INIT_ASYNC_INFO:
+    return "INIT_ASYNC_INFO";
+  case EventTypeTy::INIT_DEVICE_INFO:
+    return "INIT_DEVICE_INFO";
+  case EventTypeTy::QUERY_ASYNC:
+    return "QUERY_ASYNC";
+  case EventTypeTy::PRINT_DEVICE_INFO:
+    return "PRINT_DEVICE_INFO";
+  case EventTypeTy::DATA_LOCK:
+    return "DATA_LOCK";
+  case EventTypeTy::DATA_UNLOCK:
+    return "DATA_UNLOCK";
+  case EventTypeTy::DATA_NOTIFY_MAPPED:
+    return "DATA_NOTIFY_MAPPED";
+  case EventTypeTy::DATA_NOTIFY_UNMAPPED:
+    return "DATA_NOTIFY_UNMAPPED";
+  case EventTypeTy::ALLOC:
+    return "ALLOC";
+  case EventTypeTy::DELETE:
+    return "DELETE";
+  case EventTypeTy::SUBMIT:
+    return "SUBMIT";
+  case EventTypeTy::RETRIEVE:
+    return "RETRIEVE";
+  case EventTypeTy::LOCAL_EXCHANGE:
+    return "LOCAL_EXCHANGE";
+  case EventTypeTy::EXCHANGE_SRC:
+    return "EXCHANGE_SRC";
+  case EventTypeTy::EXCHANGE_DST:
+    return "EXCHANGE_DST";
+  case EventTypeTy::LAUNCH_KERNEL:
+    return "LAUNCH_KERNEL";
+  case EventTypeTy::BCAST:
+    return "BCAST";
+  case EventTypeTy::SYNC:
+    return "SYNC";
+  case EventTypeTy::EXIT:
+    return "EXIT";
   }
 }
 
@@ -169,6 +198,27 @@ void MPIRequestManagerTy::receiveInBatchs(void *Buffer, int64_t Size) {
     receive(&BufferByteArray[Size - RemainingBytes],
             static_cast<int>(std::min(RemainingBytes, MPIFragmentSize.get())),
             MPI_BYTE);
+    RemainingBytes -= MPIFragmentSize.get();
+  }
+}
+
+/// BroadCast a message from \p LocalRank asynchronously.
+void MPIRequestManagerTy::bcast(void *Buffer, int Size, MPI_Datatype Datatype) {
+  MPI_Ibcast(Buffer, Size, Datatype, HostRank, Comm,
+             &Requests.emplace_back(MPI_REQUEST_NULL));
+}
+
+/// Asynchronously broadcast message fragments from \p OtherRank and reconstruct
+/// them into \p Buffer.
+void MPIRequestManagerTy::bcastInBatchs(void *Buffer, int64_t Size) {
+  // Operates over many fragments of the original buffer of at most
+  // MPI_FRAGMENT_SIZE bytes.
+  char *BufferByteArray = reinterpret_cast<char *>(Buffer);
+  int64_t RemainingBytes = Size;
+  while (RemainingBytes > 0) {
+    bcast(&BufferByteArray[Size - RemainingBytes],
+          static_cast<int>(std::min(RemainingBytes, MPIFragmentSize.get())),
+          MPI_BYTE);
     RemainingBytes -= MPIFragmentSize.get();
   }
 }
@@ -313,9 +363,35 @@ EventTy deleteBuffer(MPIRequestManagerTy RequestManager, void *Buffer,
   co_return (co_await RequestManager);
 }
 
-EventTy submit(MPIRequestManagerTy RequestManager, void *TgtPtr,
-               void *HstPtr, int64_t Size,
-               __tgt_async_info *AsyncInfoPtr) {
+EventTy bcast(MPIRequestManagerTy RequestManager, void *HstPtr, int64_t Size,
+              int NumRanks, int *DstRanks, int *DevicesPerRank,
+              void **TgtPtrs) {
+  // First send broadcast notification and metadata to all the dst ranks.
+  for (int DstRank = 0; DstRank < NumRanks; DstRank++) {
+    RequestManager.OtherRank = DstRank;
+    RequestManager.send(&Size, 1, MPI_INT64_T);
+  }
+
+  // Broadcast HstPtr to all dst ranks.
+  printf("Start bcast on origin\n");
+  RequestManager.bcastInBatchs(HstPtr, Size);
+  printf("End bcast on origin\n");
+
+  // Fill the tgt ptrs in the same order as the flat list of devices
+  int StartIdx = 0;
+  for (int DstRank = 0; DstRank < NumRanks; DstRank++) {
+    RequestManager.OtherRank = DstRank;
+    int EndIdx = StartIdx + DevicesPerRank[DstRank];
+    for (int DeviceIdx = StartIdx; DeviceIdx < EndIdx; DeviceIdx++)
+      RequestManager.receive(&TgtPtrs[DeviceIdx], sizeof(void *), MPI_BYTE);
+    StartIdx = EndIdx;
+  }
+
+  co_return (co_await RequestManager);
+}
+
+EventTy submit(MPIRequestManagerTy RequestManager, void *TgtPtr, void *HstPtr,
+               int64_t Size, __tgt_async_info *AsyncInfoPtr) {
   RequestManager.send(&AsyncInfoPtr, sizeof(void *), MPI_BYTE);
 
   RequestManager.send(&TgtPtr, sizeof(void *), MPI_BYTE);
@@ -799,6 +875,11 @@ bool EventSystemTy::createLocalMPIContext() {
   MPIError = MPI_Comm_dup(MPI_COMM_WORLD, &GateThreadComm);
   CHECK(MPIError == MPI_SUCCESS,
         "Failed to create gate thread MPI comm with error %d\n", MPIError);
+
+  // Create collective comm.
+  MPIError = MPI_Comm_dup(MPI_COMM_WORLD, &CollectiveComm);
+  CHECK(MPIError == MPI_SUCCESS,
+        "Failed to create collective MPI comm with error %d\n", MPIError);
 
   // Create event comm pool.
   EventCommPool.resize(NumMPIComms.get(), MPI_COMM_NULL);

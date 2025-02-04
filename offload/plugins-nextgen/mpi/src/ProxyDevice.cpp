@@ -8,6 +8,7 @@
 #include <memory>
 #include <mutex>
 #include <tuple>
+#include <vector>
 
 #include "EventSystem.h"
 #include "RemotePluginManager.h"
@@ -42,16 +43,6 @@ struct PluginDataHandle {
   ~PluginDataHandle() {
     // PM->Plugins[Plugin]->data_delete(Device, HstPtr, TARGET_ALLOC_HOST);
     free(HstPtr);
-  }
-};
-
-struct AsyncInfoHandle {
-  std::unique_ptr<__tgt_async_info> AsyncInfoPtr;
-  std::mutex AsyncInfoMutex;
-  AsyncInfoHandle() { AsyncInfoPtr = std::make_unique<__tgt_async_info>(); }
-  AsyncInfoHandle(AsyncInfoHandle &&Other) {
-    AsyncInfoPtr = std::move(Other.AsyncInfoPtr);
-    Other.AsyncInfoPtr = nullptr;
   }
 };
 
@@ -304,6 +295,45 @@ struct ProxyDevice {
 
     // Event completion notification
     RequestManager.send(nullptr, 0, MPI_BYTE);
+
+    co_return (co_await RequestManager);
+  }
+
+  EventTy bcast(MPIRequestManagerTy RequestManager) {
+    // void *TgtPtr = nullptr;
+    int64_t Size = 0;
+
+    RequestManager.receive(&Size, 1, MPI_INT64_T);
+
+    if (auto Error = co_await RequestManager; Error)
+      co_return Error;
+
+    // int32_t PluginId, DeviceId;
+
+    // std::tie(PluginId, DeviceId) =
+    //     EventSystem.mapDeviceId(RequestManager.DeviceId);
+
+    // PluginDataHandle DataHandler(&PluginManager, PluginId, DeviceId, Size);
+
+    // Receive the broadcast data into a staging buffer
+    void *HstPtr = memAllocHost(Size);
+    printf("Start bcast on worker\n");
+    RequestManager.bcastInBatchs(HstPtr, Size);
+    printf("End bcast on worker\n");
+
+    if (auto Error = co_await RequestManager; Error)
+      co_return Error;
+
+    // Copy data from staging buffer to all tgt devices
+    int NumDevices = PluginManager.getNumDevices();
+    llvm::SmallVector<void *> TgtPtrs(NumDevices);
+    PluginManager.bcast(HstPtr, Size, TgtPtrs.data());
+    memFreeHost(HstPtr);
+
+    // Event completion notification
+    for (int Device = 0; Device < NumDevices; Device++) {
+      RequestManager.send(&TgtPtrs[Device], sizeof(void *), MPI_BYTE);
+    }
 
     co_return (co_await RequestManager);
   }
@@ -985,6 +1015,7 @@ struct ProxyDevice {
       MPIRequestManagerTy RequestManager(
           EventSystem.getNewEventComm(EventInfo[1]), EventInfo[1],
           EventStatus.MPI_SOURCE, EventInfo[2]);
+      RequestManager.HostRank = EventSystem.WorldSize - 1;
 
       // Creates a new receive event of 'event_type' type.
       using enum EventTypeTy;
@@ -1028,6 +1059,9 @@ struct ProxyDevice {
         break;
       case EXCHANGE_DST:
         NewEvent = exchangeDst(std::move(RequestManager));
+        break;
+      case BCAST:
+        NewEvent = bcast(std::move(RequestManager));
         break;
       case EXIT:
         NewEvent =
