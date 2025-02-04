@@ -102,3 +102,22 @@ int RemotePluginManager::getNumDevices(int32_t PluginId) {
   }
   return Plugins[PluginId]->number_of_devices();
 }
+
+void RemotePluginManager::bcast(void *HstPtr, int64_t Size, void **TgtPtrs) {
+  int CurrIdx = 0;
+  for (auto &Plugin : Plugins) {
+    int32_t NumDevices = Plugin->getNumDevices();
+
+    // Copy from HstPtr to Device 0
+    void *DzeroPtr = Plugin->data_alloc(0, Size, nullptr, 0);
+    TgtPtrs[CurrIdx++] = DzeroPtr;
+    Plugin->data_submit_async(0, DzeroPtr, HstPtr, Size, nullptr);
+
+    // Copy from Device 0 to other devices
+    for (int DeviceId = 1; DeviceId < NumDevices; DeviceId++) {
+      void *DstPtr = Plugin->data_alloc(DeviceId, Size, nullptr, 0);
+      TgtPtrs[CurrIdx++] = DstPtr;
+      Plugin->data_exchange_async(0, DzeroPtr, DeviceId, DstPtr, Size, nullptr);
+    }
+  }
+}

@@ -88,6 +88,16 @@ private:
   DynamicLibrary DynLib;
 };
 
+struct AsyncInfoHandle {
+  std::unique_ptr<__tgt_async_info> AsyncInfoPtr;
+  std::mutex AsyncInfoMutex;
+  AsyncInfoHandle() { AsyncInfoPtr = std::make_unique<__tgt_async_info>(); }
+  AsyncInfoHandle(AsyncInfoHandle &&Other) {
+    AsyncInfoPtr = std::move(Other.AsyncInfoPtr);
+    Other.AsyncInfoPtr = nullptr;
+  }
+};
+
 /// Struct for the data required to handle plugins
 struct RemotePluginManager {
 
@@ -105,6 +115,8 @@ struct RemotePluginManager {
   int getNumDevices();
 
   int getNumDevices(int32_t PluginId);
+
+  void bcast(void *HstPtr, int64_t Size, void **TgtPtrs);
 
   int getNumUsedPlugins() const { return Plugins.size(); }
 

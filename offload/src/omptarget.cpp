@@ -347,6 +347,29 @@ static int32_t getParentIndex(int64_t Type) {
   return ((Type & OMP_TGT_MAPTYPE_MEMBER_OF) >> 48) - 1;
 }
 
+void targetBcast(void *HstPtr, int64_t Size, void **TgtPtrs, const char *Name) {
+  DP("Call to %s for address " DPxMOD "\n", Name, DPxPTR(HstPtr));
+
+  if (!HstPtr) {
+    DP("Call to %s with NULL ptr\n", Name);
+    return;
+  }
+
+  if (Size <= 0) {
+    DP("Call to %s with non-positive length\n", Name);
+    return;
+  }
+
+  auto DeviceOrErr = PM->getDevice(0);
+  if (!DeviceOrErr)
+    FATAL_MESSAGE(0, "%s", toString(DeviceOrErr.takeError()).c_str());
+
+  if (DeviceOrErr->bcastData(HstPtr, Size, TgtPtrs) == OFFLOAD_FAIL)
+    FATAL_MESSAGE(0, "%s", "Failed to broadcast host ptr.");
+
+  DP("ompx_target_bcast ptr transmitted to all devices\n");
+}
+
 void *targetAllocExplicit(size_t Size, int DeviceNum, int Kind,
                           const char *Name) {
   DP("Call to %s for device %d requesting %zu bytes\n", Name, DeviceNum, Size);

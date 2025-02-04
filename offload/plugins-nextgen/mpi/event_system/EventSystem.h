@@ -92,6 +92,9 @@ enum class EventTypeTy : unsigned int {
   // Target region execution.
   LAUNCH_KERNEL, // Executes a target region at the remote process.
 
+  // Collective operations.
+  BCAST, // Broadcast data to all devices.
+
   // Local event used to wait on other events.
   SYNC,
 
@@ -177,14 +180,10 @@ struct EventTy {
   }
 
   /// Set Event Type
-  void setEventType(EventTypeTy EType) {
-    EventType = EType;
-  }
+  void setEventType(EventTypeTy EType) { EventType = EType; }
 
   /// Get the Event Type
-  EventTypeTy getEventType() const {
-    return EventType;
-  }
+  EventTypeTy getEventType() const { return EventType; }
 
   /// Execution handling.
   /// Resume the coroutine execution up until the next suspension point.
@@ -265,12 +264,14 @@ public:
 
   int EventType;
 
+  int HostRank;
+
   MPIRequestManagerTy(MPI_Comm Comm, int Tag, int OtherRank, int DeviceId,
                       llvm::SmallVector<MPI_Request> InitialRequests =
                           {}) // TODO: Change to initializer_list
       : Comm(Comm), Tag(Tag), Requests(InitialRequests),
         MPIFragmentSize("OMPTARGET_MPI_FRAGMENT_SIZE", 100e6),
-        OtherRank(OtherRank), DeviceId(DeviceId), EventType(-1) {}
+        OtherRank(OtherRank), DeviceId(DeviceId), EventType(-1), HostRank(-1) {}
 
   /// This class should not be copied.
   MPIRequestManagerTy(const MPIRequestManagerTy &) = delete;
@@ -279,7 +280,8 @@ public:
   MPIRequestManagerTy(MPIRequestManagerTy &&Other) noexcept
       : Comm(Other.Comm), Tag(Other.Tag), Requests(Other.Requests),
         MPIFragmentSize(Other.MPIFragmentSize), OtherRank(Other.OtherRank),
-        DeviceId(Other.DeviceId), EventType(Other.EventType) {
+        DeviceId(Other.DeviceId), EventType(Other.EventType),
+        HostRank(Other.HostRank) {
     Other.Requests = {};
   }
 
@@ -299,6 +301,12 @@ public:
 
   /// Receives a buffer with determined size from target in batchs.
   void receiveInBatchs(void *Buffer, int64_t Size);
+
+  /// Broadcast a buffer of given datatype items with determined size to target.
+  void bcast(void *Buffer, int Size, MPI_Datatype Datatype);
+
+  /// Broadcast a buffer with determined size to target in batchs.
+  void bcastInBatchs(void *Buffer, int64_t Size);
 
   /// Coroutine that waits on all internal pending requests.
   EventTy wait();
@@ -340,9 +348,10 @@ EventTy allocateBuffer(MPIRequestManagerTy RequestManager, int64_t Size,
                        int32_t Kind, void **Buffer);
 EventTy deleteBuffer(MPIRequestManagerTy RequestManager, void *Buffer,
                      int32_t Kind);
-EventTy submit(MPIRequestManagerTy RequestManager, void *TgtPtr,
-               void *HstPtr, int64_t Size,
-               __tgt_async_info *AsyncInfoPtr);
+EventTy bcast(MPIRequestManagerTy RequestManager, void *HstPtr, int64_t Size,
+              int NumRanks, int *DstRanks, int *DevicesPerRank, void **TgtPtrs);
+EventTy submit(MPIRequestManagerTy RequestManager, void *TgtPtr, void *HstPtr,
+               int64_t Size, __tgt_async_info *AsyncInfoPtr);
 EventTy retrieve(MPIRequestManagerTy RequestManager, int64_t Size, void *HstPtr,
                  void *TgtPtr, __tgt_async_info *AsyncInfoPtr);
 EventTy localExchange(MPIRequestManagerTy RequestManager, void *SrcPtr,
@@ -447,15 +456,15 @@ class EventSystemTy {
   /// system.
   MPI_Comm GateThreadComm = MPI_COMM_NULL;
 
+  /// Communicator used by the nodes for collective communication.
+  MPI_Comm CollectiveComm = MPI_COMM_NULL;
+
   /// Communicator pool distributed over the events. Many MPI implementations
   /// allow for better network hardware parallelism when unrelated MPI messages
   /// are exchanged over distinct communicators. Thus this pool will be given in
   /// a round-robin fashion to each newly created event to better utilize the
   /// hardware capabilities.
   llvm::SmallVector<MPI_Comm> EventCommPool{};
-
-  /// Number of process used by the event system.
-  int WorldSize = -1;
 
   /// The local rank of the current instance.
   int LocalRank = -1;
@@ -505,7 +514,7 @@ public:
   template <class EventFuncTy, typename... ArgsTy>
     requires std::invocable<EventFuncTy, MPIRequestManagerTy, ArgsTy...>
   EventTy NotificationEvent(EventFuncTy EventFunc, EventTypeTy EventType,
-                                    int DstDeviceID, ArgsTy... Args);
+                            int DstDeviceID, ArgsTy... Args);
 
   /// Creates a new event.
   ///
@@ -542,6 +551,9 @@ public:
 
   RemoteDeviceId mapDeviceId(int32_t DeviceId);
 
+  /// Number of process used by the event system.
+  int WorldSize = -1;
+
   llvm::SmallVector<int> DevicesPerRemote{};
 
   friend struct ProxyDevice;
@@ -549,8 +561,9 @@ public:
 
 template <class EventFuncTy, typename... ArgsTy>
   requires std::invocable<EventFuncTy, MPIRequestManagerTy, ArgsTy...>
-EventTy EventSystemTy::NotificationEvent(EventFuncTy EventFunc, EventTypeTy EventType,
-                                   int DstDeviceID, ArgsTy... Args) {
+EventTy EventSystemTy::NotificationEvent(EventFuncTy EventFunc,
+                                         EventTypeTy EventType, int DstDeviceID,
+                                         ArgsTy... Args) {
   // Create event MPI request manager.
   const int EventTag = createNewEventTag();
   auto &EventComm = getNewEventComm(EventTag);
@@ -564,28 +577,56 @@ EventTy EventSystemTy::NotificationEvent(EventFuncTy EventFunc, EventTypeTy Even
 
   // Send new event notification.
   int EventNotificationInfo[] = {static_cast<int>(EventType), EventTag,
-                                RemoteDeviceId};
+                                 RemoteDeviceId};
+
+  if (EventType == EventTypeTy::BCAST) {
+    int NumRanks = WorldSize - 1;
+
+    llvm::SmallVector<MPI_Request> BcastNotifications(NumRanks);
+
+    for (int Rank = 0; Rank < NumRanks; Rank++) {
+      MPI_Request NotificationRequest = MPI_REQUEST_NULL;
+      int MPIError = MPI_Isend(EventNotificationInfo, 3, MPI_INT, Rank,
+                               static_cast<int>(ControlTagsTy::EVENT_REQUEST),
+                               GateThreadComm, &BcastNotifications[Rank]);
+
+      if (MPIError != MPI_SUCCESS)
+        co_return createError(
+            "MPI failed during event notification with error %d", MPIError);
+    }
+
+    MPIRequestManagerTy RequestManager(EventComm, EventTag, RemoteRank,
+                                       RemoteDeviceId, BcastNotifications);
+
+    RequestManager.EventType = EventNotificationInfo[0];
+    RequestManager.HostRank = LocalRank;
+
+    auto Event = EventFunc(std::move(RequestManager), Args...);
+    Event.setEventType(EventType);
+
+    co_return (co_await Event);
+  }
+
   MPI_Request NotificationRequest = MPI_REQUEST_NULL;
   int MPIError = MPI_Isend(EventNotificationInfo, 3, MPI_INT, RemoteRank,
-                          static_cast<int>(ControlTagsTy::EVENT_REQUEST),
-                          GateThreadComm, &NotificationRequest);
+                           static_cast<int>(ControlTagsTy::EVENT_REQUEST),
+                           GateThreadComm, &NotificationRequest);
 
   if (MPIError != MPI_SUCCESS)
     co_return createError("MPI failed during event notification with error %d",
                           MPIError);
 
   MPIRequestManagerTy RequestManager(EventComm, EventTag, RemoteRank,
-                                    RemoteDeviceId, {NotificationRequest});
+                                     RemoteDeviceId, {NotificationRequest});
 
   RequestManager.EventType = EventNotificationInfo[0];
+  RequestManager.HostRank = LocalRank;
 
   auto Event = EventFunc(std::move(RequestManager), Args...);
   Event.setEventType(EventType);
 
   co_return (co_await Event);
-
 }
-
 
 template <class EventFuncTy, typename... ArgsTy>
   requires std::invocable<EventFuncTy, MPIRequestManagerTy, ArgsTy...>

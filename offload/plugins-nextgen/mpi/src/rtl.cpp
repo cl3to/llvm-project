@@ -861,6 +861,38 @@ struct MPIPluginTy : public GenericPluginTy {
     return OFFLOAD_SUCCESS;
   }
 
+  // Only works in MPI plugin
+  int32_t data_bcast(void *HstPtr, int64_t Size, void **TgtPtrs) {
+
+    int NumRanks = EventSystem.WorldSize - 1;
+    llvm::SmallVector<int> DstRanks(NumRanks);
+    for (int Rank = 0; Rank < NumRanks; Rank++) {
+      DstRanks[Rank] = Rank;
+    }
+
+    EventTy Event = EventSystem.createEvent(
+        OriginEvents::bcast, EventTypeTy::BCAST, 0, HstPtr, Size, NumRanks,
+        DstRanks.data(), EventSystem.DevicesPerRemote.data(), TgtPtrs);
+
+    // bcast(MPIRequestManagerTy RequestManager, void **HstPtr, int64_t Size,
+    //       int NumRanks, int *DstRanks, int *DevicesPerRank, void **TgtPtrs)
+
+    if (Event.empty()) {
+      REPORT("Failed to create bcast event for HstPtr %p", HstPtr);
+      return OFFLOAD_FAIL;
+    }
+
+    Event.wait();
+
+    if (auto Error = Event.getError(); Error) {
+      REPORT("Event failed during bcast event. %s\n",
+             toString(std::move(Error)).c_str());
+      return OFFLOAD_FAIL;
+    }
+
+    return OFFLOAD_SUCCESS;
+  }
+
   int32_t data_submit_async(int32_t DeviceId, void *TgtPtr, void *HstPtr,
                             int64_t Size,
                             __tgt_async_info *AsyncInfoPtr) override {

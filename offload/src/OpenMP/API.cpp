@@ -46,6 +46,7 @@ void targetFreeExplicit(void *DevicePtr, int DeviceNum, int Kind,
 void *targetLockExplicit(void *HostPtr, size_t Size, int DeviceNum,
                          const char *Name);
 void targetUnlockExplicit(void *HostPtr, int DeviceNum, const char *Name);
+void targetBcast(void *HstPtr, int64_t Size, void **TgtPtrs, const char *Name);
 
 // Implemented in libomp, they are called from within __tgt_* functions.
 extern "C" {
@@ -655,8 +656,8 @@ EXTERN void *omp_get_mapped_ptr(const void *Ptr, int DeviceNum) {
 
   int NumDevices = omp_get_initial_device();
   if (DeviceNum == NumDevices) {
-    DP("Device %d is initial device, returning Ptr " DPxMOD ".\n",
-           DeviceNum, DPxPTR(Ptr));
+    DP("Device %d is initial device, returning Ptr " DPxMOD ".\n", DeviceNum,
+       DPxPTR(Ptr));
     return const_cast<void *>(Ptr);
   }
 
@@ -682,4 +683,8 @@ EXTERN void *omp_get_mapped_ptr(const void *Ptr, int DeviceNum) {
   DP("omp_get_mapped_ptr returns " DPxMOD ".\n", DPxPTR(TPR.TargetPointer));
 
   return TPR.TargetPointer;
+}
+
+EXTERN void ompx_target_bcast(void *HstPtr, size_t Size, void **TgtPtrs) {
+  return targetBcast(HstPtr, Size, TgtPtrs, __func__);
 }

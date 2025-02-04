@@ -130,6 +130,10 @@ int32_t DeviceTy::deleteData(void *TgtAllocBegin, int32_t Kind) {
   return RTL->data_delete(RTLDeviceID, TgtAllocBegin, Kind);
 }
 
+int32_t DeviceTy::bcastData(void *HstPtr, int64_t Size, void **TgtPtrs) {
+  return RTL->data_bcast(HstPtr, Size, TgtPtrs);
+}
+
 // Submit data to device
 int32_t DeviceTy::submitData(void *TgtPtrBegin, void *HstPtrBegin, int64_t Size,
                              AsyncInfoTy &AsyncInfo, HostDataToTargetTy *Entry,
