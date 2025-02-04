@@ -110,7 +110,7 @@ void RemotePluginManager::bcast(void *HstPtr, int64_t Size, void **TgtPtrs) {
     int StartIdx = CurrIdx;
 
     // Create a queue on device 0 to queue all data transfer
-    __tgt_async_info BcastAsyncInfo;
+    __tgt_async_info BcastAsyncInfo[3];
 
     // Alloc the buffers on the devices
     for (int DeviceId = 0; DeviceId < NumDevices; DeviceId++) {
@@ -122,7 +122,7 @@ void RemotePluginManager::bcast(void *HstPtr, int64_t Size, void **TgtPtrs) {
     // void *DzeroPtr = Plugin->data_alloc(0, Size, nullptr, 0);
     // TgtPtrs[CurrIdx++] = DzeroPtr;
     void *DzeroPtr = TgtPtrs[StartIdx];
-    Plugin->data_submit_async(0, DzeroPtr, HstPtr, Size, &BcastAsyncInfo);
+    Plugin->data_submit_async(0, DzeroPtr, HstPtr, Size, nullptr);
 
     // Copy from Device 0 to other devices
     for (int DeviceId = 1; DeviceId < NumDevices; DeviceId++) {
@@ -130,10 +130,12 @@ void RemotePluginManager::bcast(void *HstPtr, int64_t Size, void **TgtPtrs) {
       // TgtPtrs[CurrIdx++] = DstPtr;
       void *DstPtr = TgtPtrs[StartIdx + DeviceId];
       Plugin->data_exchange_async(0, DzeroPtr, DeviceId, DstPtr, Size,
-                                  &BcastAsyncInfo);
+                                  &BcastAsyncInfo[DeviceId]);
     }
 
     // Synchronize the queue on device 0 to ensure all data transfer complete
-    Plugin->synchronize(0, &BcastAsyncInfo);
+    for (int DeviceId = 1; DeviceId < NumDevices; DeviceId++) {
+      Plugin->synchronize(0, &BcastAsyncInfo[DeviceId]);
+    }
   }
 }
