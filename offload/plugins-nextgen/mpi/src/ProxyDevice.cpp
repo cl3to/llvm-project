@@ -317,9 +317,7 @@ struct ProxyDevice {
 
     // Receive the broadcast data into a staging buffer
     void *HstPtr = memAllocHost(Size);
-    printf("Start bcast on worker\n");
     RequestManager.bcastInBatchs(HstPtr, Size);
-    printf("End bcast on worker\n");
 
     if (auto Error = co_await RequestManager; Error)
       co_return Error;
