@@ -373,9 +373,7 @@ EventTy bcast(MPIRequestManagerTy RequestManager, void *HstPtr, int64_t Size,
   }
 
   // Broadcast HstPtr to all dst ranks.
-  printf("Start bcast on origin\n");
   RequestManager.bcastInBatchs(HstPtr, Size);
-  printf("End bcast on origin\n");
 
   // Fill the tgt ptrs in the same order as the flat list of devices
   int StartIdx = 0;
