@@ -110,7 +110,7 @@ void RemotePluginManager::bcast(void *HstPtr, int64_t Size, void **TgtPtrs) {
     int StartIdx = CurrIdx;
 
     // Create a queue on device 0 to queue all data transfer
-    __tgt_async_info BcastAsyncInfo[3];
+    llvm::SmallVector<__tgt_async_info> BcastAsyncInfo(NumDevices);
 
     // Alloc the buffers on the devices
     for (int DeviceId = 0; DeviceId < NumDevices; DeviceId++) {
