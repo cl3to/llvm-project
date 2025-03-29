@@ -1092,6 +1092,26 @@ struct MPIPluginTy : public GenericPluginTy {
     if (!Queue->empty())
       return OFFLOAD_SUCCESS;
 
+    // Ensure all events in the device queue have completed before
+    // deallocating the host queue, preventing the device queue
+    // from holding resources unnecessarily.
+    EventTy Event = EventSystem.createEvent(OriginEvents::queryAsync,
+                                            EventTypeTy::QUERY_ASYNC, DeviceId,
+                                            AsyncInfoPtr);
+
+    if (Event.empty()) {
+      REPORT("Failed to create query_async event on device %d\n", DeviceId);
+      return OFFLOAD_FAIL;
+    }
+
+    Event.wait();
+
+    if (auto Error = Event.getError()) {
+      REPORT("Failure to query_async on device %d: %s\n", DeviceId,
+             toString(std::move(Error)).data());
+      return OFFLOAD_FAIL;
+    }
+
     // Once the queue is synchronized, return it to the pool and reset the
     // AsyncInfo. This is to make sure that the synchronization only works
     // for its own tasks.
