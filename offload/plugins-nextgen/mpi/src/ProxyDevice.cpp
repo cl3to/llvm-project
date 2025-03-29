@@ -791,9 +791,11 @@ struct ProxyDevice {
     std::tie(PluginId, DeviceId) =
         EventSystem.mapDeviceId(RequestManager.DeviceId);
 
-    auto *TgtAsyncInfo = MapAsyncInfo(HstAsyncInfoPtr)->AsyncInfoPtr.get();
-
-    PluginManager.Plugins[PluginId]->query_async(DeviceId, TgtAsyncInfo);
+    if (auto Error =
+            co_await waitAsyncOpEnd(PluginId, DeviceId, HstAsyncInfoPtr);
+        Error)
+      REPORT("QueryAsync event failed with msg: %s\n",
+             toString(std::move(Error)).data());
 
     // Event completion notification
     RequestManager.send(nullptr, 0, MPI_BYTE);
