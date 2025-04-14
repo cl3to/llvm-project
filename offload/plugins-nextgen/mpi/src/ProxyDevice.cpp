@@ -332,8 +332,6 @@ struct ProxyDevice {
 
     if (GPUSupport) {
       RequestManager.receiveInBatchs(TgtPtr, Size);
-      if (auto Error = co_await RequestManager; Error)
-        co_return Error;
     }
 
     else {
@@ -383,29 +381,43 @@ struct ProxyDevice {
     std::tie(PluginId, DeviceId) =
         EventSystem.mapDeviceId(RequestManager.DeviceId);
 
-    PluginDataHandle DataHandler(&PluginManager, PluginId, DeviceId, Size);
+    int GPUSupport = RequestManager.queryGPUSupport();
 
-    auto *TgtAsyncInfo = MapAsyncInfo(HstAsyncInfoPtr);
+    if (GPUSupport & Size > 1024) {
 
-    {
-      std::lock_guard<std::mutex> Lock(TgtAsyncInfo->AsyncInfoMutex);
-      PluginManager.Plugins[PluginId]->data_retrieve_async(
-          DeviceId, DataHandler.HstPtr, TgtPtr, Size,
-          TgtAsyncInfo->AsyncInfoPtr.get());
+      RequestManager.send(&DeviceOpStatus, sizeof(bool), MPI_BYTE);
+
+      if (!DeviceOpStatus)
+        co_return (co_await RequestManager);
+
+      RequestManager.sendInBatchs(TgtPtr, Size);
     }
 
-    if (auto Error =
-            co_await waitAsyncOpEnd(PluginId, DeviceId, HstAsyncInfoPtr);
-        Error)
-      REPORT("Retrieve event failed with msg: %s\n",
-             toString(std::move(Error)).data());
+    else {
+      PluginDataHandle DataHandler(&PluginManager, PluginId, DeviceId, Size);
 
-    RequestManager.send(&DeviceOpStatus, sizeof(bool), MPI_BYTE);
+      auto *TgtAsyncInfo = MapAsyncInfo(HstAsyncInfoPtr);
 
-    if (!DeviceOpStatus)
-      co_return (co_await RequestManager);
+      {
+        std::lock_guard<std::mutex> Lock(TgtAsyncInfo->AsyncInfoMutex);
+        PluginManager.Plugins[PluginId]->data_retrieve_async(
+            DeviceId, DataHandler.HstPtr, TgtPtr, Size,
+            TgtAsyncInfo->AsyncInfoPtr.get());
+      }
 
-    RequestManager.sendInBatchs(DataHandler.HstPtr, Size);
+      if (auto Error =
+              co_await waitAsyncOpEnd(PluginId, DeviceId, HstAsyncInfoPtr);
+          Error)
+        REPORT("Retrieve event failed with msg: %s\n",
+               toString(std::move(Error)).data());
+
+      RequestManager.send(&DeviceOpStatus, sizeof(bool), MPI_BYTE);
+
+      if (!DeviceOpStatus)
+        co_return (co_await RequestManager);
+
+      RequestManager.sendInBatchs(DataHandler.HstPtr, Size);
+    }
 
     // Event completion notification
     RequestManager.send(nullptr, 0, MPI_BYTE);
@@ -468,30 +480,42 @@ struct ProxyDevice {
     std::tie(PluginId, DeviceId) =
         EventSystem.mapDeviceId(RequestManager.DeviceId);
 
-    PluginDataHandle DataHandler(&PluginManager, PluginId, DeviceId, Size);
+    int GPUSupport = RequestManager.queryGPUSupport();
 
-    auto *TgtAsyncInfo = MapAsyncInfo(HstAsyncInfoPtr);
+    if (GPUSupport) {
+      // Set the Destination Rank in RequestManager
+      RequestManager.OtherRank = DstRank;
 
-    {
-      std::lock_guard<std::mutex> Lock(TgtAsyncInfo->AsyncInfoMutex);
-      PluginManager.Plugins[PluginId]->data_retrieve_async(
-          DeviceId, DataHandler.HstPtr, SrcBuffer, Size,
-          TgtAsyncInfo->AsyncInfoPtr.get());
+      // Send buffer to target device
+      RequestManager.sendInBatchs(SrcBuffer, Size);
     }
 
-    if (auto Error =
-            co_await waitAsyncOpEnd(PluginId, DeviceId, HstAsyncInfoPtr);
-        Error)
-      co_return Error;
+    else {
+      PluginDataHandle DataHandler(&PluginManager, PluginId, DeviceId, Size);
 
-    // Set the Destination Rank in RequestManager
-    RequestManager.OtherRank = DstRank;
+      auto *TgtAsyncInfo = MapAsyncInfo(HstAsyncInfoPtr);
 
-    // Send buffer to target device
-    RequestManager.sendInBatchs(DataHandler.HstPtr, Size);
+      {
+        std::lock_guard<std::mutex> Lock(TgtAsyncInfo->AsyncInfoMutex);
+        PluginManager.Plugins[PluginId]->data_retrieve_async(
+            DeviceId, DataHandler.HstPtr, SrcBuffer, Size,
+            TgtAsyncInfo->AsyncInfoPtr.get());
+      }
 
-    if (auto Error = co_await RequestManager; Error)
-      co_return Error;
+      if (auto Error =
+              co_await waitAsyncOpEnd(PluginId, DeviceId, HstAsyncInfoPtr);
+          Error)
+        co_return Error;
+
+      // Set the Destination Rank in RequestManager
+      RequestManager.OtherRank = DstRank;
+
+      // Send buffer to target device
+      RequestManager.sendInBatchs(DataHandler.HstPtr, Size);
+
+      if (auto Error = co_await RequestManager; Error)
+        co_return Error;
+    }
 
     // Set the HeadNode Rank to send the final notificatin
     RequestManager.OtherRank = HeadNodeRank;
@@ -521,30 +545,42 @@ struct ProxyDevice {
     std::tie(PluginId, DeviceId) =
         EventSystem.mapDeviceId(RequestManager.DeviceId);
 
-    PluginDataHandle DataHandler(&PluginManager, PluginId, DeviceId, Size);
+    int GPUSupport = RequestManager.queryGPUSupport();
 
-    // Set the Source Rank in RequestManager
-    RequestManager.OtherRank = SrcRank;
+    if (GPUSupport) {
+      // Set the Source Rank in RequestManager
+      RequestManager.OtherRank = SrcRank;
 
-    // Receive buffer from the Source device
-    RequestManager.receiveInBatchs(DataHandler.HstPtr, Size);
-
-    if (auto Error = co_await RequestManager; Error)
-      co_return Error;
-
-    auto *TgtAsyncInfo = MapAsyncInfo(HstAsyncInfoPtr);
-
-    {
-      std::lock_guard<std::mutex> Lock(TgtAsyncInfo->AsyncInfoMutex);
-      PluginManager.Plugins[PluginId]->data_submit_async(
-          DeviceId, DstBuffer, DataHandler.HstPtr, Size,
-          TgtAsyncInfo->AsyncInfoPtr.get());
+      // Receive buffer from the Source device
+      RequestManager.receiveInBatchs(DstBuffer, Size);
     }
 
-    if (auto Error =
-            co_await waitAsyncOpEnd(PluginId, DeviceId, HstAsyncInfoPtr);
-        Error)
-      co_return Error;
+    else {
+      PluginDataHandle DataHandler(&PluginManager, PluginId, DeviceId, Size);
+
+      // Set the Source Rank in RequestManager
+      RequestManager.OtherRank = SrcRank;
+
+      // Receive buffer from the Source device
+      RequestManager.receiveInBatchs(DataHandler.HstPtr, Size);
+
+      if (auto Error = co_await RequestManager; Error)
+        co_return Error;
+
+      auto *TgtAsyncInfo = MapAsyncInfo(HstAsyncInfoPtr);
+
+      {
+        std::lock_guard<std::mutex> Lock(TgtAsyncInfo->AsyncInfoMutex);
+        PluginManager.Plugins[PluginId]->data_submit_async(
+            DeviceId, DstBuffer, DataHandler.HstPtr, Size,
+            TgtAsyncInfo->AsyncInfoPtr.get());
+      }
+
+      if (auto Error =
+              co_await waitAsyncOpEnd(PluginId, DeviceId, HstAsyncInfoPtr);
+          Error)
+        co_return Error;
+    }
 
     // Set the HeadNode Rank to send the final notificatin
     RequestManager.OtherRank = HeadNodeRank;
