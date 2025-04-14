@@ -226,6 +226,12 @@ EventTy operator co_await(MPIRequestManagerTy &RequestManager) {
   return RequestManager.wait();
 }
 
+int MPIRequestManagerTy::queryGPUSupport() {
+  int gpu_support = 0;
+  gpu_support = MPIX_Query_cuda_support();
+  return gpu_support;
+}
+
 void *memAllocHost(int64_t Size) {
   void *HstPtr = nullptr;
   int MPIError = MPI_Alloc_mem(Size, MPI_INFO_NULL, &HstPtr);

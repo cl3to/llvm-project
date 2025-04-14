@@ -298,6 +298,9 @@ public:
 
   /// Coroutine that waits on all internal pending requests.
   EventTy wait();
+
+  /// Check the support for GPU-Aware MPI
+  int queryGPUSupport();
 };
 
 EventTy operator co_await(MPIRequestManagerTy &RequestManager);
