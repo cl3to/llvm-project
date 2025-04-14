@@ -328,22 +328,32 @@ struct ProxyDevice {
     std::tie(PluginId, DeviceId) =
         EventSystem.mapDeviceId(RequestManager.DeviceId);
 
-    PluginDataHandle DataHandler(&PluginManager, PluginId, DeviceId, Size);
-    RequestManager.receiveInBatchs(DataHandler.HstPtr, Size);
+    int GPUSupport = RequestManager.queryGPUSupport();
 
-    if (auto Error = co_await RequestManager; Error)
-      co_return Error;
+    if (GPUSupport) {
+      RequestManager.receiveInBatchs(TgtPtr, Size);
+      if (auto Error = co_await RequestManager; Error)
+        co_return Error;
+    }
 
-    auto *TgtAsyncInfo = MapAsyncInfo(HstAsyncInfoPtr);
+    else {
+      PluginDataHandle DataHandler(&PluginManager, PluginId, DeviceId, Size);
+      RequestManager.receiveInBatchs(DataHandler.HstPtr, Size);
 
-    // Issues data transfer on the device
-    // Only one call at a time to avoid the
-    // risk of overwriting device queues
-    {
-      std::lock_guard<std::mutex> Lock(TgtAsyncInfo->AsyncInfoMutex);
-      PluginManager.Plugins[PluginId]->data_submit_async(
-          DeviceId, TgtPtr, DataHandler.HstPtr, Size,
-          TgtAsyncInfo->AsyncInfoPtr.get());
+      if (auto Error = co_await RequestManager; Error)
+        co_return Error;
+
+      auto *TgtAsyncInfo = MapAsyncInfo(HstAsyncInfoPtr);
+
+      // Issues data transfer on the device
+      // Only one call at a time to avoid the
+      // risk of overwriting device queues
+      {
+        std::lock_guard<std::mutex> Lock(TgtAsyncInfo->AsyncInfoMutex);
+        PluginManager.Plugins[PluginId]->data_submit_async(
+            DeviceId, TgtPtr, DataHandler.HstPtr, Size,
+            TgtAsyncInfo->AsyncInfoPtr.get());
+      }
     }
 
     // Event completion notification
