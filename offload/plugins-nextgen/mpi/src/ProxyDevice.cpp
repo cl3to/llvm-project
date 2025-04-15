@@ -488,6 +488,9 @@ struct ProxyDevice {
 
       // Send buffer to target device
       RequestManager.sendInBatchs(SrcBuffer, Size);
+
+      if (auto Error = co_await RequestManager; Error)
+        co_return Error;
     }
 
     else {
@@ -1031,6 +1034,8 @@ struct ProxyDevice {
       MPIRequestManagerTy RequestManager(
           EventSystem.getNewEventComm(EventInfo[1]), EventInfo[1],
           EventStatus.MPI_SOURCE, EventInfo[2]);
+
+      RequestManager.EventType = EventInfo[0];
 
       // Creates a new receive event of 'event_type' type.
       using enum EventTypeTy;
