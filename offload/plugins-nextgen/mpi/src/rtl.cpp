@@ -47,6 +47,8 @@
 #define BIGENDIAN_CPU
 #endif
 
+using namespace error;
+
 namespace llvm::omp::target::plugin {
 
 /// Forward declarations for all specialized data structures.
@@ -79,17 +81,18 @@ public:
     MPIDeviceImageTy &MPIImage = static_cast<MPIDeviceImageTy &>(Image);
 
     if (GlobalName == nullptr) {
-      return Plugin::error("Failed to get name for global %p", &DeviceGlobal);
+      return Plugin::error(ErrorCode::INVALID_BINARY,
+                           "Failed to get name for global %p", &DeviceGlobal);
     }
 
     void *EntryAddress = nullptr;
 
-    __tgt_offload_entry *Begin = MPIImage.getTgtImage()->EntriesBegin;
-    __tgt_offload_entry *End = MPIImage.getTgtImage()->EntriesEnd;
+    llvm::offloading::EntryTy *Begin = MPIImage.getTgtImage()->EntriesBegin;
+    llvm::offloading::EntryTy *End = MPIImage.getTgtImage()->EntriesEnd;
 
     int I = 0;
     for (auto &Entry = Begin; Entry < End; ++Entry) {
-      if (!strcmp(Entry->name, GlobalName)) {
+      if (!strcmp(Entry->SymbolName, GlobalName)) {
         EntryAddress = MPIImage.DeviceImageAddrs[I];
         break;
       }
@@ -97,7 +100,8 @@ public:
     }
 
     if (EntryAddress == nullptr) {
-      return Plugin::error("Failed to find global %s", GlobalName);
+      return Plugin::error(ErrorCode::INVALID_BINARY,
+                           "Failed to find global %s", GlobalName);
     }
 
     // Save the pointer to the symbol.
@@ -123,7 +127,8 @@ struct MPIKernelTy : public GenericKernelTy {
 
     // Check that the function pointer is valid.
     if (!Global.getPtr())
-      return Plugin::error("Invalid function for kernel %s", getName());
+      return Plugin::error(ErrorCode::INVALID_BINARY,
+                           "Invalid function for kernel %s", getName());
 
     // Save the function pointer.
     Func = (void (*)())Global.getPtr();
@@ -140,8 +145,8 @@ struct MPIKernelTy : public GenericKernelTy {
   }
 
   /// Launch the kernel.
-  Error launchImpl(GenericDeviceTy &GenericDevice, uint32_t NumThreads,
-                   uint64_t NumBlocks, KernelArgsTy &KernelArgs,
+  Error launchImpl(GenericDeviceTy &GenericDevice, uint32_t NumThreads[3],
+                   uint32_t NumBlocks[3], KernelArgsTy &KernelArgs,
                    KernelLaunchParamsTy LaunchParams,
                    AsyncInfoWrapperTy &AsyncInfoWrapper) const override;
 
@@ -167,11 +172,13 @@ struct MPIResourceRef final : public GenericDeviceResourceRef {
   /// Create a new resource and save the reference.
   Error create(GenericDeviceTy &Device) override {
     if (Resource)
-      return Plugin::error("Recreating an existing resource");
+      return Plugin::error(ErrorCode::INVALID_ARGUMENT,
+                           "Recreating an existing resource");
 
     Resource = new ResourceTy;
     if (!Resource)
-      return Plugin::error("Failed to allocated a new resource");
+      return Plugin::error(ErrorCode::OUT_OF_RESOURCES,
+                           "Failed to allocated a new resource");
 
     return Plugin::success();
   }
@@ -179,7 +186,8 @@ struct MPIResourceRef final : public GenericDeviceResourceRef {
   /// Destroy the resource and invalidate the reference.
   Error destroy(GenericDeviceTy &Device) override {
     if (!Resource)
-      return Plugin::error("Destroying an invalid resource");
+      return Plugin::error(ErrorCode::INVALID_ARGUMENT,
+                           "Destroying an invalid resource");
 
     delete Resource;
     Resource = nullptr;
@@ -271,7 +279,8 @@ struct MPIDeviceTy : public GenericDeviceTy {
     MPIKernelTy *MPIKernel = Plugin.allocate<MPIKernelTy>();
 
     if (!MPIKernel)
-      return Plugin::error("Failed to allocate memory for MPI kernel");
+      return Plugin::error(ErrorCode::OUT_OF_RESOURCES,
+                           "Failed to allocate memory for MPI kernel");
 
     new (MPIKernel) MPIKernelTy(Name);
 
@@ -349,12 +358,14 @@ struct MPIDeviceTy : public GenericDeviceTy {
 
   /// Device interoperability. Not supported by MPI right now.
   Error initAsyncInfoImpl(AsyncInfoWrapperTy &AsyncInfoWrapper) override {
-    return Plugin::error("initAsyncInfoImpl not supported");
+    return Plugin::error(ErrorCode::UNSUPPORTED,
+                         "initAsyncInfoImpl not supported");
   }
 
   /// This plugin does not support interoperability.
   Error initDeviceInfoImpl(__tgt_device_info *DeviceInfo) override {
-    return Plugin::error("initDeviceInfoImpl not supported");
+    return Plugin::error(ErrorCode::UNSUPPORTED,
+                         "initDeviceInfoImpl not supported");
   }
 
   /// Print information about the device.
@@ -393,7 +404,7 @@ private:
 };
 
 Error MPIKernelTy::launchImpl(GenericDeviceTy &GenericDevice,
-                              uint32_t NumThreads, uint64_t NumBlocks,
+                              uint32_t NumThreads[3], uint32_t NumBlocks[3],
                               KernelArgsTy &KernelArgs,
                               KernelLaunchParamsTy LaunchParams,
                               AsyncInfoWrapperTy &AsyncInfoWrapper) const {
@@ -474,7 +485,8 @@ struct MPIPluginTy : public GenericPluginTy {
     if (!Queue) {
       Queue = new MPIEventQueue;
       if (Queue == nullptr)
-        return Plugin::error("Failed to get Queue from AsyncInfoPtr %p\n",
+        return Plugin::error(ErrorCode::OUT_OF_RESOURCES,
+                             "Failed to get Queue from AsyncInfoPtr %p\n",
                              AsyncInfoPtr);
       // Modify the AsyncInfoWrapper to hold the new queue.
       AsyncInfoPtr->Queue = Queue;
@@ -485,7 +497,8 @@ struct MPIPluginTy : public GenericPluginTy {
   Error returnQueue(MPIEventQueuePtr &Queue) {
     const std::lock_guard<std::mutex> Lock(MPIQueueMutex);
     if (Queue == nullptr)
-      return Plugin::error("Failed to return Queue: invalid Queue ptr");
+      return Plugin::error(ErrorCode::UNKNOWN,
+                           "Failed to return Queue: invalid Queue ptr");
 
     delete Queue;
 
@@ -701,7 +714,8 @@ struct MPIPluginTy : public GenericPluginTy {
                                       &TgtPtr);
 
       if (Event.empty()) {
-        Err = Plugin::error("Failed to create alloc event with size %z", Size);
+        Err = Plugin::error(ErrorCode::OUT_OF_RESOURCES,
+                            "Failed to create alloc event with size %z", Size);
         break;
       }
 
@@ -713,7 +727,8 @@ struct MPIPluginTy : public GenericPluginTy {
       Err = Plugin::check(TgtPtr == nullptr, "Failed to allocate host memory");
       break;
     case TARGET_ALLOC_SHARED:
-      Err = Plugin::error("Incompatible memory type %d", Kind);
+      Err = Plugin::error(ErrorCode::UNSUPPORTED, "Incompatible memory type %d",
+                          Kind);
       break;
     }
 
@@ -742,7 +757,8 @@ struct MPIPluginTy : public GenericPluginTy {
                                   EventTypeTy::DELETE, DeviceId, TgtPtr, Kind);
 
       if (Event.empty()) {
-        Err = Plugin::error("Failed to create data delete event for %p TgtPtr",
+        Err = Plugin::error(ErrorCode::OUT_OF_RESOURCES,
+                            "Failed to create data delete event for %p TgtPtr",
                             TgtPtr);
         break;
       }

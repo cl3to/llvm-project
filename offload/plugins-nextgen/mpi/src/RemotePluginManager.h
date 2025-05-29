@@ -40,7 +40,7 @@ using GenericDeviceTy = llvm::omp::target::plugin::GenericDeviceTy;
 /// in the remote device process.
 struct DeviceImage : __tgt_device_image {
   llvm::SmallVector<unsigned char, 1> ImageBuffer;
-  llvm::SmallVector<__tgt_offload_entry, 16> Entries;
+  llvm::SmallVector<llvm::offloading::EntryTy, 16> Entries;
   llvm::SmallVector<char> FlattenedEntryNames;
 
   DeviceImage() {
@@ -69,7 +69,7 @@ struct DeviceImage : __tgt_device_image {
 
     for (size_t I = EntryCount; I > 0; I--) {
       TotalNameSize -= EntryNameSizes[I - 1];
-      Entries[I - 1].name = &FlattenedEntryNames[TotalNameSize];
+      Entries[I - 1].SymbolName = &FlattenedEntryNames[TotalNameSize];
     }
 
     // Set the entries pointers.

@@ -44,35 +44,64 @@
 
 std::string EventTypeToString(EventTypeTy eventType) {
   switch (eventType) {
-    case EventTypeTy::RETRIEVE_NUM_DEVICES: return "RETRIEVE_NUM_DEVICES";
-    case EventTypeTy::INIT_DEVICE: return "INIT_DEVICE";
-    case EventTypeTy::INIT_RECORD_REPLAY: return "INIT_RECORD_REPLAY";
-    case EventTypeTy::IS_PLUGIN_COMPATIBLE: return "IS_PLUGIN_COMPATIBLE";
-    case EventTypeTy::IS_DEVICE_COMPATIBLE: return "IS_DEVICE_COMPATIBLE";
-    case EventTypeTy::IS_DATA_EXCHANGABLE: return "IS_DATA_EXCHANGABLE";
-    case EventTypeTy::LOAD_BINARY: return "LOAD_BINARY";
-    case EventTypeTy::GET_GLOBAL: return "GET_GLOBAL";
-    case EventTypeTy::GET_FUNCTION: return "GET_FUNCTION";
-    case EventTypeTy::SYNCHRONIZE: return "SYNCHRONIZE";
-    case EventTypeTy::INIT_ASYNC_INFO: return "INIT_ASYNC_INFO";
-    case EventTypeTy::INIT_DEVICE_INFO: return "INIT_DEVICE_INFO";
-    case EventTypeTy::QUERY_ASYNC: return "QUERY_ASYNC";
-    case EventTypeTy::PRINT_DEVICE_INFO: return "PRINT_DEVICE_INFO";
-    case EventTypeTy::DATA_LOCK: return "DATA_LOCK";
-    case EventTypeTy::DATA_UNLOCK: return "DATA_UNLOCK";
-    case EventTypeTy::DATA_NOTIFY_MAPPED: return "DATA_NOTIFY_MAPPED";
-    case EventTypeTy::DATA_NOTIFY_UNMAPPED: return "DATA_NOTIFY_UNMAPPED";
-    case EventTypeTy::ALLOC: return "ALLOC";
-    case EventTypeTy::DELETE: return "DELETE";
-    case EventTypeTy::SUBMIT: return "SUBMIT";
-    case EventTypeTy::RETRIEVE: return "RETRIEVE";
-    case EventTypeTy::LOCAL_EXCHANGE: return "LOCAL_EXCHANGE";
-    case EventTypeTy::EXCHANGE_SRC: return "EXCHANGE_SRC";
-    case EventTypeTy::EXCHANGE_DST: return "EXCHANGE_DST";
-    case EventTypeTy::LAUNCH_KERNEL: return "LAUNCH_KERNEL";
-    case EventTypeTy::SYNC: return "SYNC";
-    case EventTypeTy::EXIT: return "EXIT";
-    default: return "UNKNOWN_EVENT_TYPE";
+  case EventTypeTy::RETRIEVE_NUM_DEVICES:
+    return "RETRIEVE_NUM_DEVICES";
+  case EventTypeTy::INIT_DEVICE:
+    return "INIT_DEVICE";
+  case EventTypeTy::INIT_RECORD_REPLAY:
+    return "INIT_RECORD_REPLAY";
+  case EventTypeTy::IS_PLUGIN_COMPATIBLE:
+    return "IS_PLUGIN_COMPATIBLE";
+  case EventTypeTy::IS_DEVICE_COMPATIBLE:
+    return "IS_DEVICE_COMPATIBLE";
+  case EventTypeTy::IS_DATA_EXCHANGABLE:
+    return "IS_DATA_EXCHANGABLE";
+  case EventTypeTy::LOAD_BINARY:
+    return "LOAD_BINARY";
+  case EventTypeTy::GET_GLOBAL:
+    return "GET_GLOBAL";
+  case EventTypeTy::GET_FUNCTION:
+    return "GET_FUNCTION";
+  case EventTypeTy::SYNCHRONIZE:
+    return "SYNCHRONIZE";
+  case EventTypeTy::INIT_ASYNC_INFO:
+    return "INIT_ASYNC_INFO";
+  case EventTypeTy::INIT_DEVICE_INFO:
+    return "INIT_DEVICE_INFO";
+  case EventTypeTy::QUERY_ASYNC:
+    return "QUERY_ASYNC";
+  case EventTypeTy::PRINT_DEVICE_INFO:
+    return "PRINT_DEVICE_INFO";
+  case EventTypeTy::DATA_LOCK:
+    return "DATA_LOCK";
+  case EventTypeTy::DATA_UNLOCK:
+    return "DATA_UNLOCK";
+  case EventTypeTy::DATA_NOTIFY_MAPPED:
+    return "DATA_NOTIFY_MAPPED";
+  case EventTypeTy::DATA_NOTIFY_UNMAPPED:
+    return "DATA_NOTIFY_UNMAPPED";
+  case EventTypeTy::ALLOC:
+    return "ALLOC";
+  case EventTypeTy::DELETE:
+    return "DELETE";
+  case EventTypeTy::SUBMIT:
+    return "SUBMIT";
+  case EventTypeTy::RETRIEVE:
+    return "RETRIEVE";
+  case EventTypeTy::LOCAL_EXCHANGE:
+    return "LOCAL_EXCHANGE";
+  case EventTypeTy::EXCHANGE_SRC:
+    return "EXCHANGE_SRC";
+  case EventTypeTy::EXCHANGE_DST:
+    return "EXCHANGE_DST";
+  case EventTypeTy::LAUNCH_KERNEL:
+    return "LAUNCH_KERNEL";
+  case EventTypeTy::SYNC:
+    return "SYNC";
+  case EventTypeTy::EXIT:
+    return "EXIT";
+  default:
+    return "UNKNOWN_EVENT_TYPE";
   }
 }
 
@@ -313,9 +342,8 @@ EventTy deleteBuffer(MPIRequestManagerTy RequestManager, void *Buffer,
   co_return (co_await RequestManager);
 }
 
-EventTy submit(MPIRequestManagerTy RequestManager, void *TgtPtr,
-               void *HstPtr, int64_t Size,
-               __tgt_async_info *AsyncInfoPtr) {
+EventTy submit(MPIRequestManagerTy RequestManager, void *TgtPtr, void *HstPtr,
+               int64_t Size, __tgt_async_info *AsyncInfoPtr) {
   RequestManager.send(&AsyncInfoPtr, sizeof(void *), MPI_BYTE);
 
   RequestManager.send(&TgtPtr, sizeof(void *), MPI_BYTE);
@@ -477,7 +505,7 @@ EventTy loadBinary(MPIRequestManagerTy RequestManager,
 
   for (size_t I = 0; I < EntryCount; I++) {
     // Note: +1 for the terminator.
-    EntryNameSizes[I] = std::strlen(EntriesBegin[I].name) + 1;
+    EntryNameSizes[I] = std::strlen(EntriesBegin[I].SymbolName) + 1;
   }
 
   RequestManager.send(&ImageSize, 1, MPI_UINT64_T);
@@ -494,11 +522,16 @@ EventTy loadBinary(MPIRequestManagerTy RequestManager,
   RequestManager.send(Buffer, ImageSize, MPI_BYTE);
 
   for (size_t I = 0; I < EntryCount; I++) {
-    RequestManager.send(&EntriesBegin[I].addr, 1, MPI_UINT64_T);
-    RequestManager.send(EntriesBegin[I].name, EntryNameSizes[I], MPI_CHAR);
-    RequestManager.send(&EntriesBegin[I].size, 1, MPI_UINT64_T);
-    RequestManager.send(&EntriesBegin[I].flags, 1, MPI_INT32_T);
-    RequestManager.send(&EntriesBegin[I].data, 1, MPI_INT32_T);
+    RequestManager.send(&EntriesBegin[I].Reserved, 1, MPI_UINT64_T);
+    RequestManager.send(&EntriesBegin[I].Version, 1, MPI_UINT16_T);
+    RequestManager.send(&EntriesBegin[I].Kind, 1, MPI_UINT16_T);
+    RequestManager.send(&EntriesBegin[I].Flags, 1, MPI_INT32_T);
+    RequestManager.send(&EntriesBegin[I].Address, 1, MPI_UINT64_T);
+    RequestManager.send(EntriesBegin[I].SymbolName, EntryNameSizes[I],
+                        MPI_CHAR);
+    RequestManager.send(&EntriesBegin[I].Size, 1, MPI_UINT64_T);
+    RequestManager.send(&EntriesBegin[I].Data, 1, MPI_INT32_T);
+    RequestManager.send(&EntriesBegin[I].AuxAddr, 1, MPI_UINT64_T);
   }
 
   if (auto Err = co_await RequestManager; Err)
