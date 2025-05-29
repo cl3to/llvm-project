@@ -111,9 +111,7 @@ struct ProxyDevice {
         co_return createError("Failure to wait AsyncOp\n");
 
       if (RPCServer)
-        if (auto Err = RPCServer->runServer(
-                PluginManager.Plugins[PluginId]->getDevice(DeviceId)))
-          co_return Err;
+        RPCServer->Thread->notify();
       co_await std::suspend_always{};
     }
 
@@ -620,12 +618,16 @@ struct ProxyDevice {
     RequestManager.receive(Image->ImageStart, ImageSize, MPI_BYTE);
 
     for (size_t I = 0; I < EntryCount; I++) {
-      RequestManager.receive(&Image->Entries[I].addr, 1, MPI_UINT64_T);
-      RequestManager.receive(Image->Entries[I].name, EntryNameSizes[I],
+      RequestManager.receive(&Image->Entries[I].Reserved, 1, MPI_UINT64_T);
+      RequestManager.receive(&Image->Entries[I].Version, 1, MPI_UINT16_T);
+      RequestManager.receive(&Image->Entries[I].Kind, 1, MPI_UINT16_T);
+      RequestManager.receive(&Image->Entries[I].Flags, 1, MPI_INT32_T);
+      RequestManager.receive(&Image->Entries[I].Address, 1, MPI_UINT64_T);
+      RequestManager.receive(Image->Entries[I].SymbolName, EntryNameSizes[I],
                              MPI_CHAR);
-      RequestManager.receive(&Image->Entries[I].size, 1, MPI_UINT64_T);
-      RequestManager.receive(&Image->Entries[I].flags, 1, MPI_INT32_T);
-      RequestManager.receive(&Image->Entries[I].data, 1, MPI_INT32_T);
+      RequestManager.receive(&Image->Entries[I].Size, 1, MPI_UINT64_T);
+      RequestManager.receive(&Image->Entries[I].Data, 1, MPI_INT32_T);
+      RequestManager.receive(&Image->Entries[I].AuxAddr, 1, MPI_UINT64_T);
     }
 
     if (auto Error = co_await RequestManager; Error)
