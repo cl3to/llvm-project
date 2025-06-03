@@ -177,14 +177,10 @@ struct EventTy {
   }
 
   /// Set Event Type
-  void setEventType(EventTypeTy EType) {
-    EventType = EType;
-  }
+  void setEventType(EventTypeTy EType) { EventType = EType; }
 
   /// Get the Event Type
-  EventTypeTy getEventType() const {
-    return EventType;
-  }
+  EventTypeTy getEventType() const { return EventType; }
 
   /// Execution handling.
   /// Resume the coroutine execution up until the next suspension point.
@@ -340,9 +336,8 @@ EventTy allocateBuffer(MPIRequestManagerTy RequestManager, int64_t Size,
                        int32_t Kind, void **Buffer);
 EventTy deleteBuffer(MPIRequestManagerTy RequestManager, void *Buffer,
                      int32_t Kind);
-EventTy submit(MPIRequestManagerTy RequestManager, void *TgtPtr,
-               void *HstPtr, int64_t Size,
-               __tgt_async_info *AsyncInfoPtr);
+EventTy submit(MPIRequestManagerTy RequestManager, void *TgtPtr, void *HstPtr,
+               int64_t Size, __tgt_async_info *AsyncInfoPtr);
 EventTy retrieve(MPIRequestManagerTy RequestManager, int64_t Size, void *HstPtr,
                  void *TgtPtr, __tgt_async_info *AsyncInfoPtr);
 EventTy localExchange(MPIRequestManagerTy RequestManager, void *SrcPtr,
@@ -505,7 +500,7 @@ public:
   template <class EventFuncTy, typename... ArgsTy>
     requires std::invocable<EventFuncTy, MPIRequestManagerTy, ArgsTy...>
   EventTy NotificationEvent(EventFuncTy EventFunc, EventTypeTy EventType,
-                                    int DstDeviceID, ArgsTy... Args);
+                            int DstDeviceID, ArgsTy... Args);
 
   /// Creates a new event.
   ///
@@ -549,8 +544,9 @@ public:
 
 template <class EventFuncTy, typename... ArgsTy>
   requires std::invocable<EventFuncTy, MPIRequestManagerTy, ArgsTy...>
-EventTy EventSystemTy::NotificationEvent(EventFuncTy EventFunc, EventTypeTy EventType,
-                                   int DstDeviceID, ArgsTy... Args) {
+EventTy EventSystemTy::NotificationEvent(EventFuncTy EventFunc,
+                                         EventTypeTy EventType, int DstDeviceID,
+                                         ArgsTy... Args) {
   // Create event MPI request manager.
   const int EventTag = createNewEventTag();
   auto &EventComm = getNewEventComm(EventTag);
@@ -564,18 +560,18 @@ EventTy EventSystemTy::NotificationEvent(EventFuncTy EventFunc, EventTypeTy Even
 
   // Send new event notification.
   int EventNotificationInfo[] = {static_cast<int>(EventType), EventTag,
-                                RemoteDeviceId};
+                                 RemoteDeviceId};
   MPI_Request NotificationRequest = MPI_REQUEST_NULL;
   int MPIError = MPI_Isend(EventNotificationInfo, 3, MPI_INT, RemoteRank,
-                          static_cast<int>(ControlTagsTy::EVENT_REQUEST),
-                          GateThreadComm, &NotificationRequest);
+                           static_cast<int>(ControlTagsTy::EVENT_REQUEST),
+                           GateThreadComm, &NotificationRequest);
 
   if (MPIError != MPI_SUCCESS)
     co_return createError("MPI failed during event notification with error %d",
                           MPIError);
 
   MPIRequestManagerTy RequestManager(EventComm, EventTag, RemoteRank,
-                                    RemoteDeviceId, {NotificationRequest});
+                                     RemoteDeviceId, {NotificationRequest});
 
   RequestManager.EventType = EventNotificationInfo[0];
 
@@ -583,9 +579,7 @@ EventTy EventSystemTy::NotificationEvent(EventFuncTy EventFunc, EventTypeTy Even
   Event.setEventType(EventType);
 
   co_return (co_await Event);
-
 }
-
 
 template <class EventFuncTy, typename... ArgsTy>
   requires std::invocable<EventFuncTy, MPIRequestManagerTy, ArgsTy...>
