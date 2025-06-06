@@ -114,6 +114,7 @@ llvm_update_compile_flags(llvm-offload-mpi-proxy-device)
 target_link_libraries(llvm-offload-mpi-proxy-device PRIVATE
   EventSystem
   LLVMSupport
+  LLVMFrontendOpenMP
   omp
 )
 
