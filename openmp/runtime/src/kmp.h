@@ -2791,6 +2791,15 @@ typedef struct kmp_tasking_flags { /* Total struct must be exactly 32 bits */
 
 typedef struct kmp_target_data {
   void *async_handle; // libomptarget async handle for task completion query
+
+  // More target task information to enable memory tasks
+  kmp_int64 device_id;  // Device ID
+  void *outlined_fn_id; // Target region/outlined function address
+  kmp_int32 num_args;   // Target region argument addresses and sizes
+  void **args_base;
+  void **args;
+  kmp_int64 *arg_sizes;
+  kmp_int64 *arg_types; // map types (to,from,...) of the target task args
 } kmp_target_data_t;
 
 struct kmp_taskdata { /* aligned during dynamic allocation       */

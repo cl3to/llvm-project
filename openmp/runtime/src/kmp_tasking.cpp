@@ -1712,8 +1712,20 @@ kmp_task_t *__kmpc_omp_target_task_alloc(ident_t *loc_ref, kmp_int32 gtid,
   if (__kmp_enable_hidden_helper)
     input_flags.hidden_helper = TRUE;
 
-  return __kmpc_omp_task_alloc(loc_ref, gtid, flags, sizeof_kmp_task_t,
-                               sizeof_shareds, task_entry);
+  kmp_task_t *retval = __kmpc_omp_task_alloc(
+    loc_ref, gtid, flags, sizeof_kmp_task_t, sizeof_shareds, task_entry);
+
+  // Add more information about the target task in the wrapper task data
+  kmp_taskdata_t *taskdata = KMP_TASK_TO_TASKDATA(retval);
+  taskdata->td_target_data.device_id = device_id;
+  taskdata->td_target_data.outlined_fn_id = outlined_fn_id;
+  taskdata->td_target_data.num_args = num_args;
+  taskdata->td_target_data.args_base = args_base;
+  taskdata->td_target_data.args = args;
+  taskdata->td_target_data.arg_sizes = arg_sizes;
+  taskdata->td_target_data.arg_types = arg_types;
+
+  return retval;
 }
 
 /*!
