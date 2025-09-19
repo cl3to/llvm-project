@@ -3721,7 +3721,7 @@ CGOpenMPRuntime::emitTaskInit(CodeGenFunction &CGF, SourceLocation Loc,
           : CGF.Builder.getInt32(Data.Final.getInt() ? FinalFlag : 0);
   TaskFlags = CGF.Builder.CreateOr(TaskFlags, CGF.Builder.getInt32(Flags));
   llvm::Value *SharedsSize = CGM.getSize(C.getTypeSizeInChars(SharedsTy));
-  SmallVector<llvm::Value *, 8> AllocArgs = {emitUpdateLocation(CGF, Loc),
+  SmallVector<llvm::Value *, 14> AllocArgs = {emitUpdateLocation(CGF, Loc),
       getThreadID(CGF, Loc), TaskFlags, KmpTaskTWithPrivatesTySize,
       SharedsSize, CGF.Builder.CreatePointerBitCastOrAddrSpaceCast(
           TaskEntry, KmpRoutineEntryPtrTy)};
@@ -3739,6 +3739,37 @@ CGOpenMPRuntime::emitTaskInit(CodeGenFunction &CGF, SourceLocation Loc,
     else
       DeviceID = CGF.Builder.getInt64(OMP_DEVICEID_UNDEF);
     AllocArgs.push_back(DeviceID);
+
+    // Push the target region/outline function address: it's used to
+    // inform which target region a task will be executing
+    if (Data.TargetInfo.OutlinedFnID)
+        AllocArgs.push_back(Data.TargetInfo.OutlinedFnID);
+    else
+        // Pass null pointer for constructors that have no Outlined Function
+        // Example: tgt_target_data_begin_nowait as well data_end & data_update
+        AllocArgs.push_back(llvm::ConstantPointerNull::get(CGF.VoidPtrTy));
+
+    // Also push target/outline function num args, args base, args & size 
+    AllocArgs.push_back(
+        CGF.Builder.getInt32(Data.TargetInfo.NumberOfTargetItems));
+    if (Data.TargetInfo.BasePointersArray.isValid()) {
+        AllocArgs.push_back(Data.TargetInfo.BasePointersArray.emitRawPointer(CGF));
+        AllocArgs.push_back(Data.TargetInfo.PointersArray.emitRawPointer(CGF));
+        AllocArgs.push_back(Data.TargetInfo.SizesArray.emitRawPointer(CGF));
+    } 
+    else {
+        AllocArgs.push_back(llvm::ConstantPointerNull::get(CGF.VoidPtrPtrTy));
+        AllocArgs.push_back(llvm::ConstantPointerNull::get(CGF.VoidPtrPtrTy));
+        AllocArgs.push_back(
+            llvm::ConstantPointerNull::get(CGF.Int64Ty->getPointerTo()));
+    }
+    // Push target/outlined function MapTypesArray
+    if (Data.TargetInfo.MapTypesArray)
+        AllocArgs.push_back(Data.TargetInfo.MapTypesArray);
+    else
+        AllocArgs.push_back(
+            llvm::ConstantPointerNull::get(CGF.Int64Ty->getPointerTo()));
+
     NewTask = CGF.EmitRuntimeCall(
         OMPBuilder.getOrCreateRuntimeFunction(
             CGM.getModule(), OMPRTL___kmpc_omp_target_task_alloc),
@@ -9346,6 +9377,10 @@ static void emitTargetCallKernelLaunch(
   MapTypesArray = Info.RTArgs.MapTypesArray;
   MapNamesArray = Info.RTArgs.MapNamesArray;
 
+  // Update the MapTypesArray in the InputInfo Struct
+  InputInfo.MapTypesArray = MapTypesArray;
+
+
   auto &&ThenGen = [&OMPRuntime, OutlinedFn, &D, &CapturedVars,
                     RequiresOuterTask, &CS, OffloadingMandatory, Device,
                     OutlinedFnID, &InputInfo, &MapTypesArray, &MapNamesArray,
@@ -9477,6 +9512,12 @@ void CGOpenMPRuntime::emitTargetCall(
   emitInlinedDirective(CGF, OMPD_unknown, ArgsCodegen);
 
   CodeGenFunction::OMPTargetDataInfo InputInfo;
+
+  // Save the OutlinedFnID in the OMPTargetDataInfo struct to be used to capture
+  // the target region that a task will be executing
+  InputInfo.OutlinedFnID = OutlinedFnID;
+  InputInfo.MapTypesArray = nullptr;
+
   llvm::Value *MapTypesArray = nullptr;
   llvm::Value *MapNamesArray = nullptr;
 
@@ -10111,6 +10152,8 @@ void CGOpenMPRuntime::emitTargetDataStandAloneCall(
          "Expecting either target enter, exit data, or update directives.");
 
   CodeGenFunction::OMPTargetDataInfo InputInfo;
+  InputInfo.MapTypesArray = nullptr;
+
   llvm::Value *MapTypesArray = nullptr;
   llvm::Value *MapNamesArray = nullptr;
   // Generate the code for the opening of the data environment.
@@ -10262,6 +10305,10 @@ void CGOpenMPRuntime::emitTargetDataStandAloneCall(
         Address(Info.RTArgs.MappersArray, CGF.VoidPtrTy, CGM.getPointerAlign());
     MapTypesArray = Info.RTArgs.MapTypesArray;
     MapNamesArray = Info.RTArgs.MapNamesArray;
+
+    // Update the MapTypesArray in the InputInfo Struct
+    InputInfo.MapTypesArray = MapTypesArray;
+
     if (RequiresOuterTask)
       CGF.EmitOMPTargetTaskBasedDirective(D, ThenGen, InputInfo);
     else

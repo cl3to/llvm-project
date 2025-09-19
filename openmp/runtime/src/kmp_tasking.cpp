@@ -1697,7 +1697,13 @@ kmp_task_t *__kmpc_omp_target_task_alloc(ident_t *loc_ref, kmp_int32 gtid,
                                          size_t sizeof_kmp_task_t,
                                          size_t sizeof_shareds,
                                          kmp_routine_entry_t task_entry,
-                                         kmp_int64 device_id) {
+                                         kmp_int64 device_id,
+                                         void *outlined_fn_id,
+                                         kmp_int32 num_args,
+                                         void **args_base,
+                                         void **args,
+                                         kmp_int64 *arg_sizes,
+                                         kmp_int64 *arg_types) {
   auto &input_flags = reinterpret_cast<kmp_tasking_flags_t &>(flags);
   // target task is untied defined in the specification
   input_flags.tiedness = TASK_UNTIED;

@@ -599,7 +599,7 @@ declare void @__kmpc_fork_teams(ptr, i32, ptr, ...)
 
 declare void @__kmpc_taskloop(ptr, i32, ptr, i32, ptr, ptr, i64, i32, i32, i64, ptr)
 
-declare ptr @__kmpc_omp_target_task_alloc(ptr, i32, i32, i64, i64, ptr, i64)
+declare i8* @__kmpc_omp_target_task_alloc(ptr, i32, i32, i64, i64, ptr, i64, ptr, i32, ptr, ptr, ptr, ptr)
 
 declare ptr @__kmpc_taskred_modifier_init(ptr, i32, i32, i32, ptr)
 
@@ -1183,7 +1183,7 @@ declare i32 @__tgt_target_kernel_nowait(ptr, i64, i32, i32, ptr, ptr, i32, ptr, 
 ; CHECK-NEXT: declare void @__kmpc_taskloop(ptr, i32, ptr, i32, ptr, ptr, i64, i32, i32, i64, ptr)
 
 ; CHECK: ; Function Attrs: nounwind
-; CHECK-NEXT: declare noalias ptr @__kmpc_omp_target_task_alloc(ptr, i32, i32, i64, i64, ptr, i64)
+; CHECK-NEXT: declare i8* @__kmpc_omp_target_task_alloc(ptr, i32, i32, i64, i64, ptr, i64, ptr, i32, ptr, ptr, ptr, ptr)
 
 ; CHECK: ; Function Attrs: nounwind
 ; CHECK-NEXT: declare ptr @__kmpc_taskred_modifier_init(ptr, i32, i32, i32, ptr)

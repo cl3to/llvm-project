@@ -29,6 +29,7 @@
 #include "llvm/IR/Function.h"
 #include "llvm/IR/ValueHandle.h"
 #include "llvm/Support/AtomicOrdering.h"
+#include "CodeGenFunction.h"
 
 namespace llvm {
 class ArrayType;
@@ -123,6 +124,7 @@ struct OMPTaskDataTy final {
   bool IsWorksharingReduction = false;
   bool HasNowaitClause = false;
   bool HasModifier = false;
+  CodeGenFunction::OMPTargetDataInfo TargetInfo;
 };
 
 /// Class intended to support codegen of all kind of the reduction clauses.

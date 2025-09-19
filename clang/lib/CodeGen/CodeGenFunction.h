@@ -3828,16 +3828,20 @@ public:
                                  const RegionCodeGenTy &BodyGen,
                                  const TaskGenTy &TaskGen, OMPTaskDataTy &Data);
   struct OMPTargetDataInfo {
+    llvm::Value *OutlinedFnID = nullptr;
+    llvm::Value *MapTypesArray = nullptr;
     Address BasePointersArray = Address::invalid();
     Address PointersArray = Address::invalid();
     Address SizesArray = Address::invalid();
     Address MappersArray = Address::invalid();
     unsigned NumberOfTargetItems = 0;
     explicit OMPTargetDataInfo() = default;
-    OMPTargetDataInfo(Address BasePointersArray, Address PointersArray,
+    OMPTargetDataInfo(llvm::Value *OutlinedFnID, llvm::Value *MapTypesArray,
+                      Address BasePointersArray, Address PointersArray,
                       Address SizesArray, Address MappersArray,
                       unsigned NumberOfTargetItems)
-        : BasePointersArray(BasePointersArray), PointersArray(PointersArray),
+        : OutlinedFnID(OutlinedFnID), MapTypesArray(MapTypesArray),
+          BasePointersArray(BasePointersArray), PointersArray(PointersArray),
           SizesArray(SizesArray), MappersArray(MappersArray),
           NumberOfTargetItems(NumberOfTargetItems) {}
   };

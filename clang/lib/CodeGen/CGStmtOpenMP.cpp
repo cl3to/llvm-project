@@ -5274,6 +5274,11 @@ void CodeGenFunction::EmitOMPTargetTaskBasedDirective(
   auto PartId = std::next(I);
   auto TaskT = std::next(I, 4);
   OMPTaskDataTy Data;
+
+  // Capture the OutlinedFnID & its args and store in OMPTaskDataTy struct
+  // to be used to inform which target region a task will be executing;
+  Data.TargetInfo = InputInfo;
+
   // The task is not final.
   Data.Final.setInt(/*IntVal=*/false);
   // Get list of firstprivate variables.
