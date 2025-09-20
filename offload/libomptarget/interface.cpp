@@ -15,6 +15,7 @@
 #include "OffloadPolicy.h"
 #include "OpenMP/OMPT/Callback.h"
 #include "OpenMP/omp.h"
+#include "OpenMP/Mapping.h"
 #include "PluginManager.h"
 #include "omptarget.h"
 #include "private.h"
@@ -554,4 +555,55 @@ EXTERN void __tgt_target_nowait_query(void **AsyncHandle) {
   // Delete the handle and unset it from the OpenMP task data.
   delete AsyncInfo;
   *AsyncHandle = nullptr;
+}
+
+EXTERN void __tgt_target_memtask(void *HstPtr, int64_t Size, int64_t DstDevice,
+                                 int64_t SrcDevice) {
+  assert(PM && "Runtime not initialized");
+  void *SrcPtr, *DstPtr;
+  auto SrcDeviceOrErr = PM->getDevice(SrcDevice);
+  if (!SrcDeviceOrErr)
+    FATAL_MESSAGE(SrcDevice, "%s", toString(SrcDeviceOrErr.takeError()).c_str());
+
+  auto DstDeviceOrErr = PM->getDevice(DstDevice);
+  if (!DstDeviceOrErr)
+    FATAL_MESSAGE(DstDevice, "%s", toString(DstDeviceOrErr.takeError()).c_str());
+
+  AsyncInfoTy SrcAsyncInfo(*SrcDeviceOrErr);
+  AsyncInfoTy DstAsyncInfo(*DstDeviceOrErr);
+
+  MappingInfoTy::HDTTMapAccessorTy SrcHDTTMap =
+      SrcDeviceOrErr->getMappingInfo().HostDataToTargetMap.getExclusiveAccessor();
+
+  TargetPointerResultTy SrcTPR = SrcDeviceOrErr->getMappingInfo().getTargetPointer(
+      SrcHDTTMap, HstPtr, HstPtr, /*TgtPadding=*/0, Size,
+      /*HstPtrName=*/nullptr,
+      /*HasFlagTo=*/false, /*HasFlagAlways=*/false, /*IsImplicit=*/false,
+      /*UpdateRef=*/true, /*HasCloseModifier=*/false,
+      /*HasPresentModifier=*/false, /*HasHoldModifier=*/false,
+      /*AsyncInfo=*/ SrcAsyncInfo,
+      /*OwnedTPR=*/nullptr, /*ReleaseHDTTMap=*/false);
+
+  MappingInfoTy::HDTTMapAccessorTy DstHDTTMap =
+      DstDeviceOrErr->getMappingInfo().HostDataToTargetMap.getExclusiveAccessor();
+
+  TargetPointerResultTy DstTPR = DstDeviceOrErr->getMappingInfo().getTargetPointer(
+      DstHDTTMap, HstPtr, HstPtr, /*TgtPadding=*/0, Size,
+      /*HstPtrName=*/nullptr,
+      /*HasFlagTo=*/false, /*HasFlagAlways=*/false, /*IsImplicit=*/false,
+      /*UpdateRef=*/true, /*HasCloseModifier=*/false,
+      /*HasPresentModifier=*/false, /*HasHoldModifier=*/false,
+      /*AsyncInfo=*/ DstAsyncInfo,
+      /*OwnedTPR=*/nullptr, /*ReleaseHDTTMap=*/false);
+
+  SrcPtr = SrcTPR.TargetPointer;
+  DstPtr = DstTPR.TargetPointer;
+  
+  printf("SrcPtr=%p, DstPtr=%p\n", SrcPtr, DstPtr);
+
+  omp_target_memcpy(DstPtr, SrcPtr, Size, 0, 0,
+    static_cast<int32_t>(DstDevice), static_cast<int32_t>(SrcDevice));
+
+  SrcAsyncInfo.synchronize();
+  DstAsyncInfo.synchronize();
 }

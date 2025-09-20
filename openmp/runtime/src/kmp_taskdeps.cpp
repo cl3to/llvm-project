@@ -753,6 +753,14 @@ __kmp_insert_memory_tasks_with_deps(kmp_int32 gtid, kmp_depnode_t *node,
             printf("Memory Task: ");
             printf("dst_device=%d, src_device=%d, hst_ptr=%p\n",
               mem_task_args->DstDevice, mem_task_args->SrcDevice, mem_task_args->Dst);
+
+            void (*tgt_target_memtask)(void *, int64_t , int64_t , int64_t);
+            *(void **)(&tgt_target_memtask) = KMP_DLSYM("__tgt_target_memtask");
+
+            KMP_ASSERT(tgt_target_memtask);
+            tgt_target_memtask(mem_task_args->Dst, mem_task_args->Length,
+              mem_task_args->DstDevice, mem_task_args->SrcDevice);
+
             kmp_info_t *thread = __kmp_threads[gtid];
 #if USE_FAST_MEMORY
               __kmp_fast_free(thread, mem_task_args);
