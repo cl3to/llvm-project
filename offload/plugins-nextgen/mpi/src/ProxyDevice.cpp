@@ -52,11 +52,6 @@ struct AsyncInfoHandle {
   AsyncInfoHandle(AsyncInfoHandle &&Other) {
     AsyncInfoPtr = std::move(Other.AsyncInfoPtr);
     Other.AsyncInfoPtr = nullptr;
-    HstPtr = PM->Plugins[Plugin]->data_alloc(Device, Size, nullptr,
-                                             TARGET_ALLOC_HOST);
-  }
-  ~PluginDataHandle() {
-    PM->Plugins[Plugin]->data_delete(Device, HstPtr, TARGET_ALLOC_HOST);
   }
 };
 
@@ -320,8 +315,6 @@ struct ProxyDevice {
     if (auto Error = co_await RequestManager; Error)
       co_return Error;
 
-    auto *TgtAsyncInfo = MapAsyncInfo(HstAsyncInfoPtr);
-
     RequestManager.receive(&TgtPtr, sizeof(void *), MPI_BYTE);
     RequestManager.receive(&Size, 1, MPI_INT64_T);
 
@@ -388,7 +381,7 @@ struct ProxyDevice {
 
     int GPUSupport = RequestManager.queryGPUSupport();
 
-    if (GPUSupport & Size > 1024) {
+    if (GPUSupport && (Size > 1024)) {
 
       RequestManager.send(&DeviceOpStatus, sizeof(bool), MPI_BYTE);
 
