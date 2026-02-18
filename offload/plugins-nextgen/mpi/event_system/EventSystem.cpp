@@ -227,8 +227,17 @@ EventTy operator co_await(MPIRequestManagerTy &RequestManager) {
 }
 
 int MPIRequestManagerTy::queryGPUSupport() {
-  int gpu_support = 0;
-  gpu_support = MPIX_Query_cuda_support();
+  int cuda_support, hip_support, gpu_support = 0;
+
+  MPIX_GPU_query_support(MPIX_GPU_SUPPORT_CUDA, &cuda_support);
+  MPIX_GPU_query_support(MPIX_GPU_SUPPORT_HIP, &hip_support);
+
+  // cuda_support = MPIX_Query_cuda_support();
+  // hip_support = MPIX_Query_rocm_support();
+
+  if (cuda_support || hip_support)
+    gpu_support = 1;
+
   return gpu_support;
 }
 
