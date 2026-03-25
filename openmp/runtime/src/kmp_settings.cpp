@@ -1289,7 +1289,7 @@ static void __kmp_stg_print_tdg_dot(kmp_str_buf_t *buffer, char const *name,
 static void __kmp_stg_parse_num_hidden_helper_threads(char const *name,
                                                       char const *value,
                                                       void *data) {
-  __kmp_stg_parse_int(name, value, 0, 16, &__kmp_hidden_helper_threads_num);
+  __kmp_stg_parse_int(name, value, 0, 48, &__kmp_hidden_helper_threads_num);
   // If the number of hidden helper threads is zero, we disable hidden helper
   // task
   if (__kmp_hidden_helper_threads_num == 0) {
